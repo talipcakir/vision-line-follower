@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  SERIT TAKIP ROBOTU - Otomatik Kurulum Scripti
+#  SERIT TAKIP ROBOTU v2.0 - Otomatik Kurulum Scripti
 # ============================================================
 #
 #  KULLANIM:
@@ -26,7 +26,8 @@ error() { echo -e "${RED}[HATA]${NC} $1"; }
 
 echo ""
 echo "============================================================"
-echo "  SERIT TAKIP ROBOTU - Kurulum"
+echo "  SERIT TAKIP ROBOTU v2.0 - Kurulum"
+echo "  Web Yonetim Arayuzu"
 echo "============================================================"
 echo ""
 
@@ -50,7 +51,8 @@ fi
 
 # Script dizini
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+RASPBERRYPI_DIR="$(dirname "$SCRIPT_DIR")"
 INSTALL_DIR="$HOME/vision-line-follower"
 
 info "Script dizini: $SCRIPT_DIR"
@@ -76,10 +78,36 @@ pip3 install pyserial numpy --break-system-packages 2>/dev/null || pip3 install 
 success "Paketler yuklendi"
 echo ""
 
-# ----- ADIM 2: SERI PORT YETKISI -----
+# ----- ADIM 2: ARDUINO CLI KURULUMU -----
 
 echo "============================================================"
-echo "  ADIM 2: Seri port yetkisi ayarlaniyor"
+echo "  ADIM 2: Arduino CLI kuruluyor"
+echo "============================================================"
+
+if command -v arduino-cli &> /dev/null; then
+    success "Arduino CLI zaten kurulu"
+    arduino-cli version
+else
+    info "Arduino CLI indiriliyor..."
+    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+
+    # PATH'e ekle
+    if [[ ":$PATH:" != *":$HOME/bin:"* ]]; then
+        echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+        export PATH="$HOME/bin:$PATH"
+    fi
+
+    info "Arduino AVR core yukleniyor..."
+    arduino-cli core install arduino:avr
+
+    success "Arduino CLI kuruldu"
+fi
+echo ""
+
+# ----- ADIM 3: SERI PORT YETKISI -----
+
+echo "============================================================"
+echo "  ADIM 3: Seri port yetkisi ayarlaniyor"
 echo "============================================================"
 
 if groups $USER | grep -q dialout; then
@@ -92,33 +120,29 @@ else
 fi
 echo ""
 
-# ----- ADIM 3: DOSYALARI KOPYALA -----
+# ----- ADIM 4: DOSYALARI KOPYALA -----
 
 echo "============================================================"
-echo "  ADIM 3: Proje dosyalari kopyalaniyor"
+echo "  ADIM 4: Proje dosyalari kopyalaniyor"
 echo "============================================================"
 
 # Kurulum dizinini olustur
 mkdir -p "$INSTALL_DIR"
 
-# Ana dosyalari kopyala
-info "gorsel_isleme.py kopyalaniyor..."
-cp "$PROJECT_DIR/gorsel_isleme.py" "$INSTALL_DIR/"
-
-info "baslatici.py kopyalaniyor..."
-cp "$SCRIPT_DIR/baslatici.py" "$INSTALL_DIR/"
+# Tum projeyi kopyala
+info "Proje dosyalari kopyalaniyor..."
+cp -r "$PROJECT_DIR"/* "$INSTALL_DIR/"
 
 # Calistirma yetkisi ver
-chmod +x "$INSTALL_DIR/baslatici.py"
-chmod +x "$INSTALL_DIR/gorsel_isleme.py"
+chmod +x "$INSTALL_DIR/raspberrypi/service/kurulum.sh"
 
 success "Dosyalar kopyalandi: $INSTALL_DIR"
 echo ""
 
-# ----- ADIM 4: SERVIS DOSYASINI KOPYALA -----
+# ----- ADIM 5: SERVIS DOSYASINI KOPYALA -----
 
 echo "============================================================"
-echo "  ADIM 4: Systemd servisi kuruluyor"
+echo "  ADIM 5: Systemd servisi kuruluyor"
 echo "============================================================"
 
 info "Servis dosyasi kopyalaniyor..."
@@ -138,10 +162,10 @@ sudo systemctl daemon-reload
 success "Servis kuruldu"
 echo ""
 
-# ----- ADIM 5: SERVISI ETKINLESTIR -----
+# ----- ADIM 6: SERVISI ETKINLESTIR -----
 
 echo "============================================================"
-echo "  ADIM 5: Servis etkinlestiriliyor"
+echo "  ADIM 6: Servis etkinlestiriliyor"
 echo "============================================================"
 
 info "Servis etkinlestiriliyor (acilista otomatik baslar)..."
@@ -156,7 +180,7 @@ echo "============================================================"
 echo "  KURULUM TAMAMLANDI!"
 echo "============================================================"
 echo ""
-success "Serit takip robotu servisi kuruldu."
+success "Vision Line Follower v2.0 kuruldu."
 echo ""
 echo "Kullanim:"
 echo "  Servisi baslat:     sudo systemctl start serit_takip.service"
@@ -166,6 +190,12 @@ echo "  Loglari goruntule:  sudo journalctl -u serit_takip.service -f"
 echo ""
 echo "Web arayuzu (servis calisirken):"
 echo "  http://$(hostname -I | awk '{print $1}'):5000"
+echo ""
+echo "Yeni ozellikler:"
+echo "  - Web uzerinden Arduino sketch yukleme"
+echo "  - PID kontrol ayarlari"
+echo "  - Canli sensor izleme"
+echo "  - Heartbeat baglanti kontrolu"
 echo ""
 
 if [ "$NEED_REBOOT" = true ]; then
@@ -186,7 +216,7 @@ else
     if [ "$answer" = "e" ]; then
         info "Servis baslatiliyor..."
         sudo systemctl start serit_takip.service
-        sleep 2
+        sleep 3
         sudo systemctl status serit_takip.service --no-pager
     fi
 fi

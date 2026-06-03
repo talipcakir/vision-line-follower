@@ -16,7 +16,7 @@ pyserial>=3.5
 # Sayısal işlemler (HSV renk dönüşümü için)
 numpy>=1.21.0
 
-# Web sunucu (canlı video akışı)
+# Web sunucu (canlı video akışı ve API)
 flask>=2.0.0
 
 # ============================================================
@@ -25,7 +25,8 @@ flask>=2.0.0
 #
 #  sudo apt install -y python3-opencv python3-picamera2
 #
-#  NOT: opencv-python pip paketi Raspberry Pi'de sorun
-#  çıkarabilir. Sistem paketi önerilir.
+#  Arduino CLI kurulumu:
+#  curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+#  arduino-cli core install arduino:avr
 #
 # ============================================================

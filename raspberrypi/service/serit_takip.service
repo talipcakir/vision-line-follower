@@ -1,8 +1,8 @@
 # ============================================================
-#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi
+#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi (v2.0)
 # ============================================================
 #
-#  Bu dosya Raspberry Pi acildiginda gorsel isleme programinin
+#  Bu dosya Raspberry Pi acildiginda web yonetim arayuzunun
 #  otomatik olarak baslamasini saglar.
 #
 #  KURULUM:
@@ -15,7 +15,7 @@
 
 [Unit]
 # Servis aciklamasi
-Description=Serit Takip Robotu - Gorsel Isleme Servisi
+Description=Serit Takip Robotu - Web Yonetim Arayuzu v2.0
 
 # Ag baglantisi hazir olduktan sonra baslat
 After=network.target
@@ -31,10 +31,10 @@ Type=simple
 User=pi
 
 # Calisma dizini
-WorkingDirectory=/home/pi/vision-line-follower
+WorkingDirectory=/home/pi/vision-line-follower/raspberrypi
 
-# Calistirilacak komut
-ExecStart=/usr/bin/python3 /home/pi/vision-line-follower/baslatici.py
+# Calistirilacak komut (yeni web arayuzu)
+ExecStart=/usr/bin/python3 -m web.app
 
 # Hata durumunda her zaman yeniden baslat
 Restart=always
@@ -44,6 +44,7 @@ RestartSec=5
 
 # Ortam degiskenleri
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/pi/vision-line-follower/raspberrypi
 
 # Standart ciktiyi journal'a yonlendir
 StandardOutput=journal
