@@ -71,9 +71,8 @@ captures/
 *.jpeg
 
 # -------------------- Project Specific --------------------
-# Local settings (already tracked: .claude/settings.local.json)
-# Remove if you don't want to track it
-# .claude/
+# Claude Code local settings
+.claude/
 
 # Test outputs
 test_output/
