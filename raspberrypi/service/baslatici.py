@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================
-#  SERIT TAKIP ROBOTU - Baslatici Script
+#  VISION LINE FOLLOWER - Baslatici Script
 # ============================================================
 #
 #  AMAC:
@@ -16,13 +16,17 @@
 #
 # ============================================================
 
+__version__ = "1.0.0"
+
 import os
 import sys
 import time
 import signal
 import subprocess
+import logging
+from logging.handlers import RotatingFileHandler
+
 import serial
-import serial.tools.list_ports
 
 # ============================================================
 #  AYARLAR
@@ -44,103 +48,114 @@ CHECK_INTERVAL = 2
 
 # Gorsel isleme script yolu
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-GORSEL_ISLEME_PATH = os.path.join(SCRIPT_DIR, 'gorsel_isleme.py')
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)  # raspberrypi/
+GORSEL_ISLEME_PATH = os.path.join(PARENT_DIR, 'gorsel_isleme.py')
 
-# Calistirilan alt islem
+# Log ayarlari
+LOG_DIR = os.path.join(PARENT_DIR, 'logs')
+LOG_FILE = os.path.join(LOG_DIR, 'baslatici.log')
+
+# ============================================================
+#  LOGLAMA
+# ============================================================
+
+def setup_logging():
+    """Loglama sistemini kur"""
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+    log_format = '%(asctime)s [%(levelname)s] %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+
+    logger = logging.getLogger('baslatici')
+    logger.setLevel(logging.INFO)
+
+    # Konsol
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(logging.Formatter(log_format, date_format))
+    logger.addHandler(console)
+
+    # Dosya
+    file_handler = RotatingFileHandler(
+        LOG_FILE,
+        maxBytes=2*1024*1024,  # 2 MB
+        backupCount=3
+    )
+    file_handler.setFormatter(logging.Formatter(log_format, date_format))
+    logger.addHandler(file_handler)
+
+    return logger
+
+logger = setup_logging()
+
+# ============================================================
+#  GLOBAL DEGISKENLER
+# ============================================================
+
 gorsel_isleme_process = None
-
-# Calisma durumu
 running = True
-
-
-# ============================================================
-#  LOG FONKSIYONU
-# ============================================================
-
-def log(message):
-    """Zaman damgali log mesaji yazdir"""
-    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{timestamp}] {message}", flush=True)
-
 
 # ============================================================
 #  SINYAL ISLEYICILER
 # ============================================================
 
 def signal_handler(signum, frame):
-    """SIGTERM/SIGINT sinyallerini yakala ve temiz kapat"""
+    """SIGTERM/SIGINT sinyallerini yakala"""
     global running
-    log(f"Sinyal alindi: {signum}")
-    log("Kapatiliyor...")
+    logger.info(f"Sinyal alindi: {signum}")
     running = False
     stop_gorsel_isleme()
     sys.exit(0)
 
-
-# SIGTERM ve SIGINT sinyallerini yakala
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
-
 
 # ============================================================
 #  ARDUINO BAGLANTI FONKSIYONLARI
 # ============================================================
 
 def find_arduino():
-    """
-    Arduino'nun bagli oldugu portu bul.
-    PING komutu gonderip PONG cevabi bekler.
-    """
+    """Arduino'nun bagli oldugu portu bul"""
     for port in ARDUINO_PORTS:
         try:
-            # Port mevcut mu kontrol et
             if not os.path.exists(port):
                 continue
 
-            log(f"Port deneniyor: {port}")
+            logger.debug(f"Port deneniyor: {port}")
 
-            # Seri baglanti ac
             ser = serial.Serial(port, BAUD_RATE, timeout=2)
-            time.sleep(2)  # Arduino reset icin bekle
+            time.sleep(2)
 
-            # Buffer'i temizle
             ser.reset_input_buffer()
             ser.reset_output_buffer()
-
-            # PING gonder
             ser.write(b"PING\n")
             time.sleep(0.5)
 
-            # Cevap oku
             response = ""
             while ser.in_waiting > 0:
                 response += ser.readline().decode()
 
             ser.close()
 
-            # PONG cevabi geldi mi?
             if "PONG" in response:
-                log(f"Arduino bulundu: {port}")
+                logger.info(f"Arduino bulundu: {port}")
                 return port
 
-            log(f"Port {port} - Cevap: {response.strip()}")
-
         except Exception as e:
-            log(f"Port {port} - Hata: {e}")
+            logger.debug(f"Port {port} - Hata: {e}")
 
     return None
 
 
 def wait_for_arduino():
     """Arduino baglanana kadar bekle"""
-    log("Arduino bekleniyor...")
+    logger.info("Arduino bekleniyor...")
 
     while running:
         port = find_arduino()
         if port:
             return port
 
-        log(f"Arduino bulunamadi, {CHECK_INTERVAL} saniye sonra tekrar denenecek...")
+        logger.debug(f"Arduino bulunamadi, {CHECK_INTERVAL}s sonra tekrar...")
         time.sleep(CHECK_INTERVAL)
 
     return None
@@ -166,7 +181,6 @@ def check_arduino_connected(port):
     except Exception:
         return False
 
-
 # ============================================================
 #  GORSEL ISLEME YONETIMI
 # ============================================================
@@ -176,15 +190,15 @@ def start_gorsel_isleme():
     global gorsel_isleme_process
 
     if gorsel_isleme_process and gorsel_isleme_process.poll() is None:
-        log("Gorsel isleme zaten calisiyor")
+        logger.debug("Gorsel isleme zaten calisiyor")
         return True
 
     if not os.path.exists(GORSEL_ISLEME_PATH):
-        log(f"HATA: Gorsel isleme scripti bulunamadi: {GORSEL_ISLEME_PATH}")
+        logger.error(f"Script bulunamadi: {GORSEL_ISLEME_PATH}")
         return False
 
     try:
-        log(f"Gorsel isleme baslatiliyor: {GORSEL_ISLEME_PATH}")
+        logger.info(f"Gorsel isleme baslatiliyor...")
         gorsel_isleme_process = subprocess.Popen(
             [sys.executable, GORSEL_ISLEME_PATH],
             stdout=subprocess.PIPE,
@@ -192,11 +206,11 @@ def start_gorsel_isleme():
             text=True,
             bufsize=1
         )
-        log(f"Gorsel isleme baslatildi (PID: {gorsel_isleme_process.pid})")
+        logger.info(f"Gorsel isleme baslatildi (PID: {gorsel_isleme_process.pid})")
         return True
 
     except Exception as e:
-        log(f"HATA: Gorsel isleme baslatilamadi: {e}")
+        logger.error(f"Baslatilamadi: {e}")
         return False
 
 
@@ -205,97 +219,87 @@ def stop_gorsel_isleme():
     global gorsel_isleme_process
 
     if gorsel_isleme_process:
-        log("Gorsel isleme durduruluyor...")
+        logger.info("Gorsel isleme durduruluyor...")
         try:
             gorsel_isleme_process.terminate()
             gorsel_isleme_process.wait(timeout=5)
-            log("Gorsel isleme durduruldu")
+            logger.info("Durduruldu")
         except subprocess.TimeoutExpired:
-            log("Zorla kapatiliyor...")
+            logger.warning("Zorla kapatiliyor...")
             gorsel_isleme_process.kill()
         except Exception as e:
-            log(f"Durdurma hatasi: {e}")
+            logger.error(f"Durdurma hatasi: {e}")
 
         gorsel_isleme_process = None
 
 
 def is_gorsel_isleme_running():
-    """Gorsel isleme calisiyor mu kontrol et"""
+    """Gorsel isleme calisiyor mu"""
     if gorsel_isleme_process:
         return gorsel_isleme_process.poll() is None
     return False
-
 
 # ============================================================
 #  ANA DONGU
 # ============================================================
 
 def main():
-    """Ana program dongusu"""
-    log("=" * 50)
-    log("  SERIT TAKIP ROBOTU - Baslatici")
-    log("=" * 50)
-    log(f"Gorsel isleme scripti: {GORSEL_ISLEME_PATH}")
-    log(f"Kontrol araligi: {CHECK_INTERVAL} saniye")
-    log("=" * 50)
+    """Ana program"""
+    logger.info("=" * 50)
+    logger.info(f"  VISION LINE FOLLOWER - Baslatici v{__version__}")
+    logger.info("=" * 50)
+    logger.info(f"Gorsel isleme: {GORSEL_ISLEME_PATH}")
+    logger.info(f"Log dosyasi: {LOG_FILE}")
+    logger.info("=" * 50)
 
     arduino_port = None
 
     while running:
         try:
-            # ----- ARDUINO BAGLANTISINI KONTROL ET -----
+            # Arduino baglantisi kontrol
             if arduino_port is None:
-                # Arduino'yu bul
                 arduino_port = wait_for_arduino()
                 if arduino_port is None:
                     continue
 
-            # Arduino hala bagli mi?
             if not check_arduino_connected(arduino_port):
-                log("Arduino baglantisi koptu!")
+                logger.warning("Arduino baglantisi koptu!")
                 stop_gorsel_isleme()
                 arduino_port = None
                 continue
 
-            # ----- GORSEL ISLEME KONTROLU -----
+            # Gorsel isleme kontrol
             if not is_gorsel_isleme_running():
-                # Gorsel isleme calismiyor, baslat
                 if not start_gorsel_isleme():
-                    log("Gorsel isleme baslatilamadi, 5 saniye bekleniyor...")
+                    logger.error("Baslatilamadi, 5s bekleniyor...")
                     time.sleep(5)
                     continue
 
-            # ----- GORSEL ISLEME CIKTISINI OKU -----
+            # Alt islem ciktisini oku
             if gorsel_isleme_process:
                 try:
-                    # Non-blocking okuma
                     import select
                     if select.select([gorsel_isleme_process.stdout], [], [], 0)[0]:
                         line = gorsel_isleme_process.stdout.readline()
                         if line:
+                            # Alt islem loglarini yonlendir
                             print(f"[GORSEL] {line.strip()}", flush=True)
                 except Exception:
                     pass
 
-            # Kisa bekleme
             time.sleep(1)
 
         except KeyboardInterrupt:
-            log("Klavye kesintisi alindi")
+            logger.info("Klavye ile durduruldu")
             break
 
         except Exception as e:
-            log(f"HATA: {e}")
+            logger.error(f"Hata: {e}")
             time.sleep(5)
 
-    # Temizlik
     stop_gorsel_isleme()
-    log("Program sonlandi")
+    logger.info("Program sonlandi")
 
-
-# ============================================================
-#  PROGRAM GIRISI
-# ============================================================
 
 if __name__ == "__main__":
     main()

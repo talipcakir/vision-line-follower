@@ -1,0 +1,31 @@
+# ============================================================
+#  Vision Line Follower - Python Bağımlılıkları
+# ============================================================
+#
+#  Kurulum:
+#    pip3 install -r requirements.txt
+#
+#  Not: picamera2 ve opencv sistem paketi olarak kurulmalı:
+#    sudo apt install python3-picamera2 python3-opencv
+#
+# ============================================================
+
+# Seri port haberleşme (Arduino ile USB iletişim)
+pyserial>=3.5
+
+# Sayısal işlemler (HSV renk dönüşümü için)
+numpy>=1.21.0
+
+# Web sunucu (canlı video akışı)
+flask>=2.0.0
+
+# ============================================================
+#  Sistem Paketleri (apt ile kurulmalı)
+# ============================================================
+#
+#  sudo apt install -y python3-opencv python3-picamera2
+#
+#  NOT: opencv-python pip paketi Raspberry Pi'de sorun
+#  çıkarabilir. Sistem paketi önerilir.
+#
+# ============================================================

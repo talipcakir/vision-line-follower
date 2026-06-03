@@ -1,0 +1,79 @@
+# ============================================================
+#  Vision Line Follower - .gitignore
+# ============================================================
+
+# -------------------- Python --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# -------------------- Environment --------------------
+.env
+.env.local
+*.local.env
+
+# -------------------- Logs --------------------
+logs/
+*.log
+
+# -------------------- IDE --------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -------------------- OS --------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# -------------------- Arduino --------------------
+# Build files (Arduino IDE 2.x)
+build/
+*.elf
+*.hex
+*.bin
+
+# -------------------- Raspberry Pi --------------------
+# Camera captures
+captures/
+*.jpg
+*.png
+*.jpeg
+
+# -------------------- Project Specific --------------------
+# Local settings (already tracked: .claude/settings.local.json)
+# Remove if you don't want to track it
+# .claude/
+
+# Test outputs
+test_output/

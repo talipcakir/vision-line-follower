@@ -1,4 +1,6 @@
-# Şerit Takip Robotu
+# Vision Line Follower
+
+**Versiyon:** 1.0.0 | **Lisans:** MIT
 
 Dönem bitirme projesi. Arduino ile çizgi takip, Raspberry Pi ile görsel işleme (kırmızı renk algılama).
 
@@ -7,24 +9,28 @@ Dönem bitirme projesi. Arduino ile çizgi takip, Raspberry Pi ile görsel işle
 ```
 vision-line-follower/
 ├── README.md                    # Ana dokümantasyon
+├── LICENSE                      # MIT Lisansı
 ├── CLAUDE.md                    # Bu dosya
-├── arduino/                     # Arduino kodları
+├── .gitignore
+├── arduino/
 │   ├── README.md
-│   └── serit_takip_robotu/      # Arduino IDE gerekliliği
+│   └── serit_takip_robotu/
 │       └── serit_takip_robotu.ino
-├── raspberrypi/                 # Raspberry Pi kodları
+├── raspberrypi/
 │   ├── README.md
+│   ├── requirements.txt         # Python bağımlılıkları
+│   ├── .env.example             # Örnek konfigürasyon
 │   ├── gorsel_isleme.py
-│   └── service/                 # Otomatik başlatma
+│   └── service/
 │       ├── README.md
 │       ├── serit_takip.service
 │       ├── baslatici.py
 │       └── kurulum.sh
-├── docs/                        # Dokümantasyon
+├── docs/
 │   ├── README.md
 │   ├── pin_baglantilari.md
 │   └── sorun_giderme.md
-└── test/                        # Test dosyaları
+└── test/
     ├── README.md
     ├── arduino/
     │   ├── test_cizgi_takip/

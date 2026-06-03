@@ -1,4 +1,7 @@
-# Şerit Takip Robotu
+# Vision Line Follower
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
 
 Dönem bitirme projesi. Arduino ile çizgi takip, Raspberry Pi ile görsel işleme (kırmızı renk algılama) yapan otonom robot.
 
@@ -10,35 +13,41 @@ Dönem bitirme projesi. Arduino ile çizgi takip, Raspberry Pi ile görsel işle
 - USB seri haberleşme (Pi ↔ Arduino)
 - Web arayüzünden canlı görüntü izleme
 - Otomatik başlatma servisi
+- Konfigürasyon dosyası desteği (.env)
+- Detaylı loglama
 
 ## Proje Yapısı
 
 ```
 vision-line-follower/
 ├── README.md                              # Bu dosya
+├── LICENSE                                # MIT Lisansı
 ├── CLAUDE.md                              # Proje özeti
+├── .gitignore                             # Git hariç tutulanlar
 │
 ├── arduino/                               # Arduino kodları
-│   ├── README.md                          # Arduino kurulum talimatları
-│   └── serit_takip_robotu/                # Arduino IDE gerekliliği
-│       └── serit_takip_robotu.ino         # Ana Arduino kodu
+│   ├── README.md
+│   └── serit_takip_robotu/
+│       └── serit_takip_robotu.ino
 │
 ├── raspberrypi/                           # Raspberry Pi kodları
-│   ├── README.md                          # Pi kurulum talimatları
-│   ├── gorsel_isleme.py                   # Görsel işleme kodu
-│   └── service/                           # Otomatik başlatma
-│       ├── README.md                      # Servis kurulum talimatları
+│   ├── README.md
+│   ├── requirements.txt                   # Python bağımlılıkları
+│   ├── .env.example                       # Örnek konfigürasyon
+│   ├── gorsel_isleme.py
+│   └── service/
+│       ├── README.md
 │       ├── serit_takip.service
 │       ├── baslatici.py
 │       └── kurulum.sh
 │
 ├── docs/                                  # Dokümantasyon
 │   ├── README.md
-│   ├── pin_baglantilari.md                # Donanım bağlantı şemaları
-│   └── sorun_giderme.md                   # Sorun çözümleri
+│   ├── pin_baglantilari.md
+│   └── sorun_giderme.md
 │
 └── test/                                  # Test dosyaları
-    ├── README.md                          # Test talimatları
+    ├── README.md
     ├── arduino/
     │   ├── test_cizgi_takip/
     │   ├── test_sensor_kalibrasyon/
@@ -49,16 +58,23 @@ vision-line-follower/
 
 ## Hızlı Başlangıç
 
-### 1. Arduino Kurulumu
+### 1. Depoyu Klonlayın
 
 ```bash
-# Arduino IDE'den yükleyin:
+git clone https://github.com/talipcakir/vision-line-follower.git
+cd vision-line-follower
+```
+
+### 2. Arduino Kurulumu
+
+Arduino IDE'den yükleyin:
+```
 arduino/serit_takip_robotu/serit_takip_robotu.ino
 ```
 
 Detaylı bilgi: [arduino/README.md](arduino/README.md)
 
-### 2. Raspberry Pi Kurulumu
+### 3. Raspberry Pi Kurulumu
 
 ```bash
 # Dosyaları Pi'ye kopyalayın
@@ -73,7 +89,7 @@ chmod +x kurulum.sh
 
 Detaylı bilgi: [raspberrypi/README.md](raspberrypi/README.md)
 
-### 3. Test
+### 4. Test
 
 Kurulum sonrası test sırası:
 1. Sensör kalibrasyonu
@@ -146,16 +162,28 @@ sudo systemctl stop serit_takip.service     # Durdur
 sudo journalctl -u serit_takip.service -f   # Log izle
 ```
 
+## Konfigürasyon
+
+Raspberry Pi ayarları `.env` dosyasından yapılabilir:
+
+```bash
+cd ~/vision-line-follower/raspberrypi
+cp .env.example .env
+nano .env
+```
+
+Detaylı bilgi: [raspberrypi/README.md](raspberrypi/README.md)
+
 ## Dokümantasyon
 
 | Dosya | İçerik |
 |-------|--------|
-| [docs/pin_baglantilari.md](docs/pin_baglantilari.md) | Tüm donanım bağlantı şemaları |
-| [docs/sorun_giderme.md](docs/sorun_giderme.md) | Sık karşılaşılan sorunlar ve çözümleri |
-| [arduino/README.md](arduino/README.md) | Arduino kurulum ve kullanım |
-| [raspberrypi/README.md](raspberrypi/README.md) | Raspberry Pi kurulum ve kullanım |
-| [raspberrypi/service/README.md](raspberrypi/service/README.md) | Otomatik başlatma servisi |
-| [test/README.md](test/README.md) | Test ve kalibrasyon talimatları |
+| [docs/pin_baglantilari.md](docs/pin_baglantilari.md) | Donanım bağlantı şemaları |
+| [docs/sorun_giderme.md](docs/sorun_giderme.md) | Sorun çözümleri |
+| [arduino/README.md](arduino/README.md) | Arduino kurulum |
+| [raspberrypi/README.md](raspberrypi/README.md) | Pi kurulum |
+| [raspberrypi/service/README.md](raspberrypi/service/README.md) | Servis kurulum |
+| [test/README.md](test/README.md) | Test talimatları |
 
 ## Sorun Giderme
 
@@ -169,6 +197,22 @@ Sık karşılaşılan sorunlar için: [docs/sorun_giderme.md](docs/sorun_giderme
 - [ ] Pi'de servis çalışıyor mu?
 - [ ] Sensörler doğru yükseklikte mi? (1-2 cm)
 
+## Katkıda Bulunma
+
+1. Fork yapın
+2. Feature branch oluşturun (`git checkout -b feature/yeni-ozellik`)
+3. Değişikliklerinizi commit edin (`git commit -m 'feat: yeni özellik eklendi'`)
+4. Branch'i push edin (`git push origin feature/yeni-ozellik`)
+5. Pull Request açın
+
 ## Lisans
 
-Bu proje eğitim amaçlıdır.
+Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır.
+
+## Yazar
+
+**Talip Çakır**
+
+---
+
+Bu proje eğitim amaçlı dönem bitirme projesi olarak geliştirilmiştir.
