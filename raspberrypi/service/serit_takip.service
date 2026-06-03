@@ -1,0 +1,63 @@
+# ============================================================
+#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi
+# ============================================================
+#
+#  Bu dosya Raspberry Pi acildiginda gorsel isleme programinin
+#  otomatik olarak baslamasini saglar.
+#
+#  KURULUM:
+#  sudo cp serit_takip.service /etc/systemd/system/
+#  sudo systemctl daemon-reload
+#  sudo systemctl enable serit_takip.service
+#  sudo systemctl start serit_takip.service
+#
+# ============================================================
+
+[Unit]
+# Servis aciklamasi
+Description=Serit Takip Robotu - Gorsel Isleme Servisi
+
+# Ag baglantisi hazir olduktan sonra baslat
+After=network.target
+
+# Belirtilen servisler basladiktan sonra baslat
+Wants=network-online.target
+
+[Service]
+# Servis tipi: basit (tek islem)
+Type=simple
+
+# Calistiran kullanici
+User=pi
+
+# Calisma dizini
+WorkingDirectory=/home/pi/vision-line-follower
+
+# Calistirilacak komut
+ExecStart=/usr/bin/python3 /home/pi/vision-line-follower/baslatici.py
+
+# Hata durumunda her zaman yeniden baslat
+Restart=always
+
+# Yeniden baslatma oncesi bekleme suresi (saniye)
+RestartSec=5
+
+# Ortam degiskenleri
+Environment=PYTHONUNBUFFERED=1
+
+# Standart ciktiyi journal'a yonlendir
+StandardOutput=journal
+StandardError=journal
+
+# Servis durduruldugunda alt islemleri de oldur
+KillMode=control-group
+
+# Durdurma sinyali
+KillSignal=SIGTERM
+
+# Durdurma icin maksimum bekleme suresi (saniye)
+TimeoutStopSec=10
+
+[Install]
+# Coklu kullanici modunda etkinlestir
+WantedBy=multi-user.target
