@@ -76,7 +76,7 @@ if sudo apt-cache show python3-picamera2 &> /dev/null; then
     info "PiCamera2 yukleniyor..."
     sudo apt install -y python3-picamera2
 else
-    warning "python3-picamera2 bulunamadi (simülasyon modu kullanilacak)"
+    warning "python3-picamera2 bulunamadi (USB kamera kullanilabilir)"
 fi
 
 success "Paketler yuklendi"

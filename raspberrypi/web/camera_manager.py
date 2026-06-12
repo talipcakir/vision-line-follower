@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Vision Line Follower - Kamera Yönetimi v2.1
-Dinamik HSV kalibrasyonu ve gelişmiş görüntü işleme
+Vision Line Follower - Kamera Yönetimi v2.2
+Dinamik HSV kalibrasyonu, çoklu kamera desteği ve gelişmiş görüntü işleme
 """
 
 import time
 import threading
 import logging
-from typing import Optional, Generator, Tuple, Dict, Any
+import os
+from typing import Optional, Generator, Tuple, Dict, Any, List
 from dataclasses import dataclass, field
 from collections import deque
 from datetime import datetime
@@ -19,12 +20,58 @@ from .config import config
 
 logger = logging.getLogger(__name__)
 
+# PiCamera2 kontrolü
 try:
     from picamera2 import Picamera2
     PICAMERA_AVAILABLE = True
 except ImportError:
     PICAMERA_AVAILABLE = False
-    logger.warning("picamera2 bulunamadı, simülasyon modu kullanılacak")
+    logger.info("picamera2 bulunamadı, USB kamera veya simülasyon modu kullanılacak")
+
+
+def find_available_cameras() -> List[Dict[str, Any]]:
+    """Sistemdeki tüm kameraları bul"""
+    cameras = []
+
+    # 1. PiCamera kontrolü - /dev/video0 genelde CSI kamera
+    if PICAMERA_AVAILABLE:
+        # CSI kamera genelde mevcut
+        cameras.append({
+            "index": -1,
+            "type": "picamera",
+            "name": "Raspberry Pi Camera (CSI)",
+            "available": True
+        })
+        logger.info("PiCamera modu aktif")
+
+    # 2. USB/Video4Linux kameraları kontrol et (CSI kamera da /dev/video0 olabilir)
+    for i in range(10):
+        device_path = f"/dev/video{i}"
+        if os.path.exists(device_path):
+            # PiCamera varsa /dev/video0'ı atla (CSI olabilir)
+            if PICAMERA_AVAILABLE and i == 0:
+                continue
+            try:
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    cap.release()
+                    if ret and frame is not None:
+                        cameras.append({
+                            "index": i,
+                            "type": "usb",
+                            "name": f"USB Camera /dev/video{i}",
+                            "device": device_path,
+                            "available": True
+                        })
+                        logger.info(f"USB kamera bulundu: /dev/video{i}")
+            except Exception as e:
+                logger.debug(f"Kamera {i} kontrol hatası: {e}")
+
+    if not cameras:
+        logger.warning("Hiç kamera bulunamadı, simülasyon modu kullanılacak")
+
+    return cameras
 
 
 @dataclass
@@ -72,12 +119,16 @@ class CameraManager:
             return
 
         self._camera = None
+        self._camera_type: Optional[str] = None  # "picamera", "usb", "simulation"
+        self._camera_index: int = -1
+        self._usb_capture: Optional[cv2.VideoCapture] = None
         self._running = False
         self._frame_lock = threading.Lock()
         self._current_frame: Optional[np.ndarray] = None
         self._detection_result = DetectionResult()
         self._stats = CameraStats()
         self._start_time: Optional[float] = None
+        self._available_cameras: List[Dict] = []
 
         # FPS hesaplama
         self._frame_times: deque = deque(maxlen=30)
@@ -89,24 +140,77 @@ class CameraManager:
         self._initialized = True
         logger.info("CameraManager başlatıldı")
 
-    def start(self) -> bool:
-        """Kamerayı başlat"""
+    def start(self, camera_index: Optional[int] = None) -> bool:
+        """Kamerayı başlat - otomatik olarak mevcut kameraları dener"""
         if self._running:
             logger.warning("Kamera zaten çalışıyor")
             return True
 
+        # Mevcut kameraları bul
+        self._available_cameras = find_available_cameras()
+        logger.info(f"Bulunan kameralar: {len(self._available_cameras)}")
+
+        # Belirli bir kamera istendiyse
+        if camera_index is not None:
+            return self._start_camera_by_index(camera_index)
+
+        # Sırayla dene
+        for cam_info in self._available_cameras:
+            if self._try_start_camera(cam_info):
+                return True
+
+        # Hiçbir kamera bulunamadı
+        logger.warning("Hiçbir kamera başlatılamadı")
+        self._camera_type = None
+        self._running = False
+        return False
+
+    def _start_camera_by_index(self, index: int) -> bool:
+        """Belirli indeksteki kamerayı başlat"""
+        for cam_info in self._available_cameras:
+            if cam_info["index"] == index:
+                return self._try_start_camera(cam_info)
+        return False
+
+    def _try_start_camera(self, cam_info: Dict) -> bool:
+        """Belirli bir kamerayı başlatmayı dene"""
         try:
-            if PICAMERA_AVAILABLE:
+            if cam_info["type"] == "picamera":
+                logger.info("PiCamera başlatılıyor...")
                 self._camera = Picamera2()
                 cam_config = self._camera.create_preview_configuration(
-                    main={"size": (config.camera.width, config.camera.height)}
+                    main={"size": (config.camera.width, config.camera.height), "format": "RGB888"}
                 )
                 self._camera.configure(cam_config)
                 self._camera.start()
-                time.sleep(2)  # Stabilizasyon
+                time.sleep(2)
+
+                # Test frame al
+                test_frame = self._camera.capture_array()
+                if test_frame is None:
+                    raise Exception("PiCamera'dan frame alınamadı")
+
+                self._camera_type = "picamera"
+                self._camera_index = -1
                 logger.info(f"PiCamera başlatıldı: {config.camera.width}x{config.camera.height}")
-            else:
-                logger.info("Simülasyon modu: PiCamera yok")
+
+            elif cam_info["type"] == "usb":
+                logger.info(f"USB kamera başlatılıyor: {cam_info['index']}")
+                self._usb_capture = cv2.VideoCapture(cam_info["index"])
+                self._usb_capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.camera.width)
+                self._usb_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.camera.height)
+                self._usb_capture.set(cv2.CAP_PROP_FPS, config.camera.fps)
+
+                if not self._usb_capture.isOpened():
+                    raise Exception("USB kamera açılamadı")
+
+                ret, frame = self._usb_capture.read()
+                if not ret or frame is None:
+                    raise Exception("USB kameradan frame alınamadı")
+
+                self._camera_type = "usb"
+                self._camera_index = cam_info["index"]
+                logger.info(f"USB kamera başlatıldı: {cam_info['name']}")
 
             self._running = True
             self._start_time = time.time()
@@ -114,21 +218,33 @@ class CameraManager:
             return True
 
         except Exception as e:
-            logger.error(f"Kamera başlatma hatası: {e}", exc_info=True)
-            self._stats.errors += 1
+            logger.error(f"Kamera başlatma hatası ({cam_info['name']}): {e}", exc_info=True)
+            self._cleanup_camera()
             return False
+
+    def _cleanup_camera(self):
+        """Kamera kaynaklarını temizle"""
+        if self._camera:
+            try:
+                self._camera.stop()
+                self._camera.close()
+            except:
+                pass
+            self._camera = None
+
+        if self._usb_capture:
+            try:
+                self._usb_capture.release()
+            except:
+                pass
+            self._usb_capture = None
 
     def stop(self):
         """Kamerayı durdur"""
         self._running = False
-        if self._camera:
-            try:
-                self._camera.stop()
-                logger.info("Kamera durduruldu")
-            except Exception as e:
-                logger.error(f"Kamera durdurma hatası: {e}")
-            finally:
-                self._camera = None
+        self._cleanup_camera()
+        self._camera_type = None
+        logger.info("Kamera durduruldu")
 
     def restart(self) -> bool:
         """Kamerayı yeniden başlat"""
@@ -143,11 +259,27 @@ class CameraManager:
             return None
 
         try:
-            if self._camera and PICAMERA_AVAILABLE:
-                frame = self._camera.capture_array()
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            else:
-                frame = self._generate_test_frame()
+            frame = None
+
+            if self._camera_type == "picamera" and self._camera:
+                try:
+                    frame = self._camera.capture_array()
+                    if frame is not None:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                except Exception as e:
+                    logger.error(f"PiCamera frame hatası: {e}")
+                    self._stats.errors += 1
+                    return None
+
+            elif self._camera_type == "usb" and self._usb_capture:
+                ret, frame = self._usb_capture.read()
+                if not ret or frame is None:
+                    logger.warning("USB kameradan frame alınamadı")
+                    self._stats.errors += 1
+                    return None
+
+            if frame is None:
+                return None
 
             with self._frame_lock:
                 self._current_frame = frame.copy()
@@ -161,38 +293,21 @@ class CameraManager:
             self._stats.errors += 1
             return None
 
-    def _generate_test_frame(self) -> np.ndarray:
-        """Test frame'i oluştur (simülasyon modu)"""
+    def _generate_error_frame(self) -> np.ndarray:
+        """Kamera yok/hata frame'i"""
         frame = np.zeros((config.camera.height, config.camera.width, 3), dtype=np.uint8)
-        frame[:] = (40, 40, 50)
+        frame[:] = (30, 30, 30)
 
-        # Grid çiz
-        for i in range(0, config.camera.width, 50):
-            cv2.line(frame, (i, 0), (i, config.camera.height), (60, 60, 70), 1)
-        for i in range(0, config.camera.height, 50):
-            cv2.line(frame, (0, i), (config.camera.width, i), (60, 60, 70), 1)
-
-        # Başlık
         cv2.putText(
-            frame, "SIMULASYON MODU",
-            (config.camera.width // 2 - 120, config.camera.height // 2 - 20),
-            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 200, 255), 2
+            frame, "KAMERA YOK",
+            (config.camera.width // 2 - 100, config.camera.height // 2 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 200), 2
         )
         cv2.putText(
-            frame, "PiCamera bulunamadi - Test goruntusu",
-            (config.camera.width // 2 - 180, config.camera.height // 2 + 20),
+            frame, "Kamera baglantisini kontrol edin",
+            (config.camera.width // 2 - 150, config.camera.height // 2 + 30),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (150, 150, 150), 1
         )
-
-        # Animasyonlu test objesi
-        t = time.time() % 10
-        test_x = int(100 + t * 40)
-        test_y = config.camera.height // 2 + 80
-
-        # Kırmızı test dikdörtgeni
-        cv2.rectangle(frame, (test_x, test_y), (test_x + 60, test_y + 40), (0, 0, 200), -1)
-        cv2.putText(frame, "TEST", (test_x + 5, test_y + 28),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
         return frame
 
@@ -308,27 +423,69 @@ class CameraManager:
     def generate_frames(self, with_detection: bool = True,
                         show_overlay: bool = True) -> Generator[bytes, None, None]:
         """MJPEG video stream oluştur"""
-        while self._running:
-            frame = self.capture_frame()
-            if frame is None:
-                time.sleep(0.1)
+        error_count = 0
+        max_errors = 5
+        error_frame_sent = False
+
+        while True:
+            # Kamera çalışmıyorsa hata frame'i gönder
+            if not self._running:
+                if not error_frame_sent:
+                    frame = self._generate_error_frame()
+                    try:
+                        encode_params = [cv2.IMWRITE_JPEG_QUALITY, config.camera.jpeg_quality]
+                        ret, buffer = cv2.imencode('.jpg', frame, encode_params)
+                        if ret:
+                            yield (
+                                b'--frame\r\n'
+                                b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n'
+                            )
+                            error_frame_sent = True
+                    except Exception:
+                        pass
+                time.sleep(1)
                 continue
 
-            if with_detection:
-                frame, detection = self.detect_color(frame)
+            error_frame_sent = False
+            frame = self.capture_frame()
 
-            if show_overlay:
-                frame = self._add_overlay(frame, detection if with_detection else None)
+            if frame is None:
+                error_count += 1
+                if error_count > max_errors:
+                    # Çok fazla hata, hata frame'i göster
+                    frame = self._generate_error_frame()
+                    error_count = 0
+                else:
+                    time.sleep(0.1)
+                    continue
+            else:
+                error_count = 0
 
-            # JPEG encode
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, config.camera.jpeg_quality]
-            _, buffer = cv2.imencode('.jpg', frame, encode_params)
-            frame_bytes = buffer.tobytes()
+            try:
+                if with_detection:
+                    frame, detection = self.detect_color(frame)
+                else:
+                    detection = None
 
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
-            )
+                if show_overlay:
+                    frame = self._add_overlay(frame, detection)
+
+                # JPEG encode
+                encode_params = [cv2.IMWRITE_JPEG_QUALITY, config.camera.jpeg_quality]
+                ret, buffer = cv2.imencode('.jpg', frame, encode_params)
+
+                if not ret:
+                    continue
+
+                frame_bytes = buffer.tobytes()
+
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
+                )
+
+            except Exception as e:
+                logger.error(f"Frame encode hatası: {e}")
 
             # FPS limit
             time.sleep(1 / config.camera.fps)
@@ -450,6 +607,10 @@ class CameraManager:
     def detection_log(self) -> list:
         return list(self._detection_log)
 
+    def get_available_cameras(self) -> List[Dict]:
+        """Mevcut kameraların listesi"""
+        return self._available_cameras
+
     def get_status(self) -> Dict[str, Any]:
         """Detaylı kamera durumu"""
         uptime = 0
@@ -458,11 +619,14 @@ class CameraManager:
 
         return {
             "running": self._running,
+            "camera_type": self._camera_type,
+            "camera_index": self._camera_index,
             "fps": round(self._stats.fps, 1),
             "width": config.camera.width,
             "height": config.camera.height,
             "picamera_available": PICAMERA_AVAILABLE,
-            "simulation_mode": not PICAMERA_AVAILABLE,
+            "camera_available": self._camera_type is not None,
+            "available_cameras": len(self._available_cameras),
             "detection_enabled": config.color_detection.enabled,
             "auto_stop_enabled": config.color_detection.auto_stop,
             "red_detected": self._detection_result.red_detected,

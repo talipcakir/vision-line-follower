@@ -801,9 +801,16 @@ def api_events():
 @app.route('/api/camera/restart', methods=['POST'])
 def api_camera_restart():
     """Kamerayı yeniden başlat"""
-    logger.info("Kamera yeniden başlatılıyor...")
+    data = request.get_json(silent=True) or {}
+    camera_index = data.get('camera_index')
+
+    logger.info(f"Kamera yeniden başlatılıyor... (index: {camera_index})")
     if camera_manager.restart():
-        return jsonify({"success": True, "message": "Kamera yeniden başlatıldı"})
+        return jsonify({
+            "success": True,
+            "message": "Kamera yeniden başlatıldı",
+            "camera_type": camera_manager.get_status().get("camera_type")
+        })
     return jsonify({"success": False, "error": "Kamera başlatılamadı"})
 
 
@@ -811,6 +818,20 @@ def api_camera_restart():
 def api_camera_status():
     """Kamera durumu"""
     return jsonify(camera_manager.get_status())
+
+
+@app.route('/api/camera/list')
+def api_camera_list():
+    """Mevcut kameraları listele"""
+    from .camera_manager import find_available_cameras
+    cameras = find_available_cameras()
+    return jsonify({
+        "cameras": cameras,
+        "current": {
+            "type": camera_manager.get_status().get("camera_type"),
+            "index": camera_manager.get_status().get("camera_index")
+        }
+    })
 
 
 # ============================================================
