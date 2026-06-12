@@ -3,180 +3,400 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vision Line Follower - Kontrol Paneli</title>
+    <title>Vision Line Follower - Kontrol Paneli v2.1</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
 </head>
 <body>
     <header>
-        <h1>🤖 Vision Line Follower</h1>
-        <div class="connection-status" id="connectionStatus">
-            <span class="status-dot disconnected"></span>
-            <span class="status-text">Bağlantı Yok</span>
+        <div class="header-left">
+            <h1>Vision Line Follower</h1>
+            <span class="version-badge" id="versionBadge">v2.1.0</span>
+        </div>
+        <div class="header-right">
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot disconnected"></span>
+                <span class="status-text">Bağlantı Yok</span>
+            </div>
+            <div class="uptime" id="uptime">Uptime: --</div>
         </div>
     </header>
 
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="control">Kontrol</button>
+        <button class="tab-btn" data-tab="calibration">HSV Kalibrasyon</button>
+        <button class="tab-btn" data-tab="arduino">Arduino</button>
+        <button class="tab-btn" data-tab="logs">Log & Debug</button>
+    </nav>
+
     <main>
-        <!-- Video Akışı -->
-        <section class="video-section">
-            <div class="video-container">
-                <img id="videoFeed" src="/video_feed" alt="Kamera Görüntüsü">
-                <div class="video-overlay" id="videoOverlay">
-                    <span>Kamera Bekleniyor...</span>
+        <!-- ============================================================
+             TAB: KONTROL
+             ============================================================ -->
+        <div class="tab-content active" id="tab-control">
+            <div class="grid-layout">
+                <!-- Video Akışı -->
+                <section class="video-section">
+                    <div class="video-container">
+                        <img id="videoFeed" src="/video_feed" alt="Kamera Görüntüsü">
+                        <div class="video-overlay" id="videoOverlay">
+                            <div class="spinner"></div>
+                            <span>Kamera Bekleniyor...</span>
+                        </div>
+                        <div class="video-controls">
+                            <button class="icon-btn" onclick="takeSnapshot()" title="Anlık Görüntü">📷</button>
+                            <button class="icon-btn" onclick="restartCamera()" title="Kamerayı Yeniden Başlat">🔄</button>
+                        </div>
+                    </div>
+                    <div class="detection-status" id="detectionStatus">
+                        <span class="label">Kırmızı Algılama:</span>
+                        <span class="value" id="detectionValue">Yok</span>
+                    </div>
+                </section>
+
+                <!-- Kontrol Paneli -->
+                <section class="control-section">
+                    <!-- Robot Kontrolü -->
+                    <div class="card">
+                        <h2>Robot Kontrolü</h2>
+                        <div class="control-buttons">
+                            <button id="btnStart" class="btn btn-success btn-large" onclick="startRobot()">
+                                <span class="btn-icon">▶</span> BAŞLAT
+                            </button>
+                            <button id="btnStop" class="btn btn-danger btn-large" onclick="stopRobot()">
+                                <span class="btn-icon">⏹</span> DURDUR
+                            </button>
+                        </div>
+                        <div class="robot-status">
+                            <div class="status-item">
+                                <span class="label">Durum:</span>
+                                <span class="value" id="robotStatusText">Bilinmiyor</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Firmware:</span>
+                                <span class="value" id="firmwareVersion">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hız Ayarı -->
+                    <div class="card">
+                        <h2>Hız Ayarı</h2>
+                        <div class="slider-container">
+                            <input type="range" id="speedSlider" min="0" max="255" value="100"
+                                   oninput="updateSpeedLabel(this.value)">
+                            <div class="slider-labels">
+                                <span>0</span>
+                                <span class="current-value" id="speedValue">100</span>
+                                <span>255</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="applySpeed()">Uygula</button>
+                    </div>
+
+                    <!-- PID Ayarları -->
+                    <div class="card">
+                        <h2>PID Ayarları</h2>
+                        <div class="pid-inputs">
+                            <div class="input-group">
+                                <label for="inputKp">Kp</label>
+                                <input type="number" id="inputKp" value="1.0" step="0.1" min="0" max="10">
+                                <span class="hint">Anlık hata</span>
+                            </div>
+                            <div class="input-group">
+                                <label for="inputKi">Ki</label>
+                                <input type="number" id="inputKi" value="0.0" step="0.01" min="0" max="5">
+                                <span class="hint">Birikmiş hata</span>
+                            </div>
+                            <div class="input-group">
+                                <label for="inputKd">Kd</label>
+                                <input type="number" id="inputKd" value="0.5" step="0.1" min="0" max="10">
+                                <span class="hint">Hata değişimi</span>
+                            </div>
+                        </div>
+                        <div class="button-group">
+                            <button class="btn btn-primary" onclick="applyPID()">Uygula</button>
+                            <button class="btn btn-secondary" onclick="savePID()">EEPROM Kaydet</button>
+                            <button class="btn btn-secondary" onclick="resetPID()">Sıfırla</button>
+                        </div>
+                    </div>
+
+                    <!-- Sensör Değerleri -->
+                    <div class="card">
+                        <h2>IR Sensörler</h2>
+                        <div class="sensor-display" id="sensorDisplay">
+                            <div class="sensor" id="sensor0"><div class="sensor-bar"></div><span>Sol 2</span></div>
+                            <div class="sensor" id="sensor1"><div class="sensor-bar"></div><span>Sol 1</span></div>
+                            <div class="sensor" id="sensor2"><div class="sensor-bar"></div><span>Orta</span></div>
+                            <div class="sensor" id="sensor3"><div class="sensor-bar"></div><span>Sağ 1</span></div>
+                            <div class="sensor" id="sensor4"><div class="sensor-bar"></div><span>Sağ 2</span></div>
+                        </div>
+                        <div class="sensor-info">
+                            <span>Hata: <strong id="sensorError">0</strong></span>
+                            <span>Çizgi: <strong id="lineDetected">-</strong></span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             TAB: HSV KALİBRASYON
+             ============================================================ -->
+        <div class="tab-content" id="tab-calibration">
+            <div class="calibration-layout">
+                <!-- Video Preview -->
+                <section class="calibration-video">
+                    <div class="video-container small">
+                        <img id="calibrationVideo" src="/video_feed" alt="Kalibrasyon Önizleme">
+                    </div>
+                </section>
+
+                <!-- HSV Ayarları -->
+                <section class="hsv-controls">
+                    <div class="card">
+                        <h2>Renk Algılama Ayarları</h2>
+
+                        <div class="toggle-row">
+                            <label>Renk Algılama:</label>
+                            <label class="switch">
+                                <input type="checkbox" id="detectionEnabled" checked onchange="toggleDetection()">
+                                <span class="slider-toggle"></span>
+                            </label>
+                            <span id="detectionStatusText">Açık</span>
+                        </div>
+
+                        <div class="toggle-row">
+                            <label>Otomatik Durdurma:</label>
+                            <label class="switch">
+                                <input type="checkbox" id="autoStopEnabled" checked onchange="toggleAutoStop()">
+                                <span class="slider-toggle"></span>
+                            </label>
+                        </div>
+
+                        <hr>
+
+                        <h3>Kırmızı Aralık 1 (H: 0-10)</h3>
+                        <div class="hsv-sliders">
+                            <div class="slider-row">
+                                <label>H Min:</label>
+                                <input type="range" id="red1HMin" min="0" max="20" value="0" oninput="updateHSVLabel(this)">
+                                <span class="value">0</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>H Max:</label>
+                                <input type="range" id="red1HMax" min="0" max="20" value="10" oninput="updateHSVLabel(this)">
+                                <span class="value">10</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>S Min:</label>
+                                <input type="range" id="red1SMin" min="0" max="255" value="120" oninput="updateHSVLabel(this)">
+                                <span class="value">120</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>V Min:</label>
+                                <input type="range" id="red1VMin" min="0" max="255" value="70" oninput="updateHSVLabel(this)">
+                                <span class="value">70</span>
+                            </div>
+                        </div>
+
+                        <h3>Kırmızı Aralık 2 (H: 170-180)</h3>
+                        <div class="hsv-sliders">
+                            <div class="slider-row">
+                                <label>H Min:</label>
+                                <input type="range" id="red2HMin" min="160" max="180" value="170" oninput="updateHSVLabel(this)">
+                                <span class="value">170</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>H Max:</label>
+                                <input type="range" id="red2HMax" min="160" max="180" value="180" oninput="updateHSVLabel(this)">
+                                <span class="value">180</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>S Min:</label>
+                                <input type="range" id="red2SMin" min="0" max="255" value="120" oninput="updateHSVLabel(this)">
+                                <span class="value">120</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>V Min:</label>
+                                <input type="range" id="red2VMin" min="0" max="255" value="70" oninput="updateHSVLabel(this)">
+                                <span class="value">70</span>
+                            </div>
+                        </div>
+
+                        <h3>Diğer Parametreler</h3>
+                        <div class="hsv-sliders">
+                            <div class="slider-row">
+                                <label>Min Alan:</label>
+                                <input type="range" id="minArea" min="100" max="10000" value="1500" step="100" oninput="updateHSVLabel(this)">
+                                <span class="value">1500</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>Blur:</label>
+                                <input type="range" id="blurKernel" min="1" max="15" value="5" step="2" oninput="updateHSVLabel(this)">
+                                <span class="value">5</span>
+                            </div>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-primary" onclick="applyHSV()">Uygula</button>
+                            <button class="btn btn-success" onclick="saveHSV()">Kaydet</button>
+                            <button class="btn btn-secondary" onclick="resetHSV()">Sıfırla</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             TAB: ARDUINO
+             ============================================================ -->
+        <div class="tab-content" id="tab-arduino">
+            <div class="arduino-layout">
+                <div class="card">
+                    <h2>Arduino Bağlantısı</h2>
+                    <div class="arduino-status-grid">
+                        <div class="status-item">
+                            <span class="label">Durum:</span>
+                            <span class="value" id="serialState">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Port:</span>
+                            <span class="value" id="serialPort">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Firmware:</span>
+                            <span class="value" id="serialFirmware">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Baud Rate:</span>
+                            <span class="value" id="serialBaud">9600</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Uptime:</span>
+                            <span class="value" id="serialUptime">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Komut Sayısı:</span>
+                            <span class="value" id="serialCmdCount">0</span>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="connectArduino()">Bağlan</button>
+                        <button class="btn btn-danger" onclick="disconnectArduino()">Bağlantıyı Kes</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Mevcut Portlar</h2>
+                    <div id="portList" class="port-list">
+                        <p class="muted">Yükleniyor...</p>
+                    </div>
+                    <button class="btn btn-secondary" onclick="refreshPorts()">Portları Yenile</button>
+                </div>
+
+                <div class="card">
+                    <h2>Sketch Yönetimi</h2>
+                    <div class="arduino-cli-status">
+                        <span class="label">Arduino CLI:</span>
+                        <span class="value" id="cliStatus">-</span>
+                    </div>
+
+                    <div class="sketch-selector">
+                        <label>Sketch Seç:</label>
+                        <select id="sketchSelect">
+                            <option value="">-- Sketch Seçin --</option>
+                        </select>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-secondary" onclick="compileSketch()">🔨 Derle</button>
+                        <button class="btn btn-primary" onclick="uploadSketch()">📤 Yükle</button>
+                        <button class="btn btn-secondary" onclick="refreshSketches()">🔄 Yenile</button>
+                    </div>
+
+                    <div class="upload-progress" id="uploadProgress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <span class="progress-text" id="progressText">İşleniyor...</span>
+                    </div>
+                </div>
+
+                <div class="card full-width">
+                    <h2>Komut Terminali</h2>
+                    <div class="terminal" id="terminal"></div>
+                    <div class="terminal-input">
+                        <input type="text" id="commandInput" placeholder="Komut girin (PING, STATUS, GO, STOP, SENSORS...)"
+                               onkeypress="if(event.key==='Enter') sendCommand()">
+                        <button class="btn btn-primary" onclick="sendCommand()">Gönder</button>
+                    </div>
+                    <div class="quick-commands">
+                        <button class="btn btn-sm" onclick="quickCommand('PING')">PING</button>
+                        <button class="btn btn-sm" onclick="quickCommand('STATUS')">STATUS</button>
+                        <button class="btn btn-sm" onclick="quickCommand('VERSION')">VERSION</button>
+                        <button class="btn btn-sm" onclick="quickCommand('CONFIG')">CONFIG</button>
+                        <button class="btn btn-sm" onclick="quickCommand('SENSORS')">SENSORS</button>
+                    </div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- Kontrol Paneli -->
-        <section class="control-section">
-            <!-- Robot Kontrolü -->
-            <div class="card">
-                <h2>Robot Kontrolü</h2>
-                <div class="control-buttons">
-                    <button id="btnStart" class="btn btn-success" onclick="startRobot()">
-                        ▶ BAŞLAT
-                    </button>
-                    <button id="btnStop" class="btn btn-danger" onclick="stopRobot()">
-                        ⏹ DURDUR
-                    </button>
+        <!-- ============================================================
+             TAB: LOG & DEBUG
+             ============================================================ -->
+        <div class="tab-content" id="tab-logs">
+            <div class="logs-layout">
+                <div class="card full-width">
+                    <h2>
+                        Sistem Logları
+                        <div class="log-controls">
+                            <select id="logLevelFilter" onchange="filterLogs()">
+                                <option value="">Tümü</option>
+                                <option value="DEBUG">DEBUG</option>
+                                <option value="INFO">INFO</option>
+                                <option value="WARNING">WARNING</option>
+                                <option value="ERROR">ERROR</option>
+                            </select>
+                            <button class="btn btn-sm" onclick="clearLogs()">Temizle</button>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="autoScrollLogs" checked>
+                                Otomatik Kaydır
+                            </label>
+                        </div>
+                    </h2>
+                    <div class="log-viewer" id="logViewer"></div>
                 </div>
-                <div class="robot-status" id="robotStatus">
-                    <span class="status-label">Durum:</span>
-                    <span class="status-value" id="robotStatusText">Bilinmiyor</span>
+
+                <div class="card">
+                    <h2>Komut Geçmişi</h2>
+                    <div class="command-history" id="commandHistory"></div>
+                    <button class="btn btn-secondary" onclick="refreshCommandHistory()">Yenile</button>
+                </div>
+
+                <div class="card">
+                    <h2>Algılama Geçmişi</h2>
+                    <div class="detection-history" id="detectionHistory"></div>
+                </div>
+
+                <div class="card">
+                    <h2>Sistem Bilgisi</h2>
+                    <div class="system-info" id="systemInfo">
+                        <div class="info-row"><span>Versiyon:</span><span id="sysVersion">-</span></div>
+                        <div class="info-row"><span>Uptime:</span><span id="sysUptime">-</span></div>
+                        <div class="info-row"><span>Request Sayısı:</span><span id="sysRequests">-</span></div>
+                        <div class="info-row"><span>Kamera FPS:</span><span id="sysFps">-</span></div>
+                        <div class="info-row"><span>Frame Sayısı:</span><span id="sysFrames">-</span></div>
+                        <div class="info-row"><span>Algılama Sayısı:</span><span id="sysDetections">-</span></div>
+                    </div>
                 </div>
             </div>
-
-            <!-- Hız Ayarı -->
-            <div class="card">
-                <h2>Hız Ayarı</h2>
-                <div class="slider-container">
-                    <input type="range" id="speedSlider" min="0" max="255" value="100"
-                           oninput="updateSpeedLabel(this.value)">
-                    <div class="slider-labels">
-                        <span>0</span>
-                        <span id="speedValue">100</span>
-                        <span>255</span>
-                    </div>
-                </div>
-                <button class="btn btn-primary" onclick="applySpeed()">Uygula</button>
-            </div>
-
-            <!-- PID Ayarları -->
-            <div class="card">
-                <h2>PID Ayarları</h2>
-                <div class="pid-inputs">
-                    <div class="input-group">
-                        <label for="inputKp">Kp</label>
-                        <input type="number" id="inputKp" value="1.0" step="0.1" min="0" max="10">
-                    </div>
-                    <div class="input-group">
-                        <label for="inputKi">Ki</label>
-                        <input type="number" id="inputKi" value="0.0" step="0.01" min="0" max="5">
-                    </div>
-                    <div class="input-group">
-                        <label for="inputKd">Kd</label>
-                        <input type="number" id="inputKd" value="0.5" step="0.1" min="0" max="10">
-                    </div>
-                </div>
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="applyPID()">Uygula</button>
-                    <button class="btn btn-secondary" onclick="savePID()">Kaydet</button>
-                    <button class="btn btn-secondary" onclick="resetPID()">Sıfırla</button>
-                </div>
-            </div>
-
-            <!-- Sensör Değerleri -->
-            <div class="card">
-                <h2>IR Sensörler</h2>
-                <div class="sensor-display" id="sensorDisplay">
-                    <div class="sensor" id="sensor0">
-                        <div class="sensor-bar"></div>
-                        <span class="sensor-label">Sol 2</span>
-                    </div>
-                    <div class="sensor" id="sensor1">
-                        <div class="sensor-bar"></div>
-                        <span class="sensor-label">Sol 1</span>
-                    </div>
-                    <div class="sensor" id="sensor2">
-                        <div class="sensor-bar"></div>
-                        <span class="sensor-label">Orta</span>
-                    </div>
-                    <div class="sensor" id="sensor3">
-                        <div class="sensor-bar"></div>
-                        <span class="sensor-label">Sağ 1</span>
-                    </div>
-                    <div class="sensor" id="sensor4">
-                        <div class="sensor-bar"></div>
-                        <span class="sensor-label">Sağ 2</span>
-                    </div>
-                </div>
-                <p class="sensor-hint">Siyah = Çizgi algılandı</p>
-            </div>
-        </section>
-
-        <!-- Arduino Yönetimi -->
-        <section class="arduino-section">
-            <div class="card">
-                <h2>Arduino Yönetimi</h2>
-
-                <div class="arduino-status" id="arduinoStatus">
-                    <div class="status-row">
-                        <span class="label">Kart:</span>
-                        <span class="value" id="arduinoBoard">-</span>
-                    </div>
-                    <div class="status-row">
-                        <span class="label">Port:</span>
-                        <span class="value" id="arduinoPort">-</span>
-                    </div>
-                    <div class="status-row">
-                        <span class="label">CLI:</span>
-                        <span class="value" id="arduinoCli">-</span>
-                    </div>
-                </div>
-
-                <div class="sketch-selector">
-                    <label for="sketchSelect">Sketch Seç:</label>
-                    <select id="sketchSelect">
-                        <option value="">-- Sketch Seçin --</option>
-                    </select>
-                </div>
-
-                <div class="button-group">
-                    <button class="btn btn-secondary" onclick="compileSketch()">
-                        🔨 Derle
-                    </button>
-                    <button class="btn btn-primary" onclick="uploadSketch()">
-                        📤 Yükle
-                    </button>
-                    <button class="btn btn-secondary" onclick="refreshSketches()">
-                        🔄 Yenile
-                    </button>
-                </div>
-
-                <div class="upload-progress" id="uploadProgress" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill"></div>
-                    </div>
-                    <span class="progress-text" id="progressText">Yükleniyor...</span>
-                </div>
-            </div>
-        </section>
-
-        <!-- Terminal / Log -->
-        <section class="log-section">
-            <div class="card">
-                <h2>Komut Terminali</h2>
-                <div class="terminal" id="terminal"></div>
-                <div class="terminal-input">
-                    <input type="text" id="commandInput" placeholder="Komut girin (örn: PING, STATUS)"
-                           onkeypress="if(event.key==='Enter') sendCommand()">
-                    <button class="btn btn-primary" onclick="sendCommand()">Gönder</button>
-                </div>
-            </div>
-        </section>
+        </div>
     </main>
 
     <footer>
-        <p>Vision Line Follower v<span id="version">2.0.0</span> | Dönem Bitirme Projesi</p>
+        <p>Vision Line Follower v<span id="footerVersion">2.1.0</span> | Dönem Bitirme Projesi</p>
     </footer>
 
     <script src="js/app.js"></script>

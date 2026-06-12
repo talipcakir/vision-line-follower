@@ -1,5 +1,5 @@
 # ============================================================
-#  Vision Line Follower - Python Bağımlılıkları
+#  Vision Line Follower v2.1 - Python Bağımlılıkları
 # ============================================================
 #
 #  Kurulum:
@@ -14,19 +14,21 @@
 pyserial>=3.5
 
 # Sayısal işlemler (HSV renk dönüşümü için)
-numpy>=1.21.0
+numpy>=1.24.0
 
 # Web sunucu (canlı video akışı ve API)
-flask>=2.0.0
+flask>=2.3.0
 
 # ============================================================
 #  Sistem Paketleri (apt ile kurulmalı)
 # ============================================================
 #
+#  sudo apt update
 #  sudo apt install -y python3-opencv python3-picamera2
 #
 #  Arduino CLI kurulumu:
 #  curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+#  sudo mv bin/arduino-cli /usr/local/bin/
 #  arduino-cli core install arduino:avr
 #
 # ============================================================

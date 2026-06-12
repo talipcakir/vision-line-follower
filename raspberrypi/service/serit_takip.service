@@ -1,5 +1,5 @@
 # ============================================================
-#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi (v2.0)
+#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi (v2.1)
 # ============================================================
 #
 #  Bu dosya Raspberry Pi acildiginda web yonetim arayuzunun
@@ -14,51 +14,40 @@
 # ============================================================
 
 [Unit]
-# Servis aciklamasi
-Description=Serit Takip Robotu - Web Yonetim Arayuzu v2.0
-
-# Ag baglantisi hazir olduktan sonra baslat
+Description=Vision Line Follower - Web Yonetim Arayuzu v2.1
 After=network.target
-
-# Belirtilen servisler basladiktan sonra baslat
 Wants=network-online.target
 
 [Service]
-# Servis tipi: basit (tek islem)
 Type=simple
-
-# Calistiran kullanici
 User=pi
+Group=pi
 
 # Calisma dizini
 WorkingDirectory=/home/pi/vision-line-follower/raspberrypi
 
-# Calistirilacak komut (yeni web arayuzu)
+# Calistirilacak komut
 ExecStart=/usr/bin/python3 -m web.app
 
-# Hata durumunda her zaman yeniden baslat
+# Hata durumunda yeniden baslat
 Restart=always
-
-# Yeniden baslatma oncesi bekleme suresi (saniye)
 RestartSec=5
 
 # Ortam degiskenleri
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/home/pi/vision-line-follower/raspberrypi
+Environment=LOG_LEVEL=INFO
+Environment=LOG_FILE=/var/log/vision-line-follower/app.log
 
-# Standart ciktiyi journal'a yonlendir
+# Log ciktisi
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=vision-line-follower
 
-# Servis durduruldugunda alt islemleri de oldur
+# Durdurma ayarlari
 KillMode=control-group
-
-# Durdurma sinyali
 KillSignal=SIGTERM
-
-# Durdurma icin maksimum bekleme suresi (saniye)
 TimeoutStopSec=10
 
 [Install]
-# Coklu kullanici modunda etkinlestir
 WantedBy=multi-user.target
