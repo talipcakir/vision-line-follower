@@ -20,11 +20,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=__USER__
+Group=__USER__
 
 # Calisma dizini
-WorkingDirectory=/home/pi/vision-line-follower/raspberrypi
+WorkingDirectory=__HOME__/vision-line-follower/raspberrypi
 
 # Calistirilacak komut
 ExecStart=/usr/bin/python3 -m web.app
@@ -35,7 +35,7 @@ RestartSec=5
 
 # Ortam degiskenleri
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/home/pi/vision-line-follower/raspberrypi
+Environment=PYTHONPATH=__HOME__/vision-line-follower/raspberrypi
 Environment=LOG_LEVEL=INFO
 Environment=LOG_FILE=/var/log/vision-line-follower/app.log
 

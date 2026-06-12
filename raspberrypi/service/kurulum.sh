@@ -183,16 +183,13 @@ header "============================================================"
 info "Servis dosyasi kopyalaniyor..."
 sudo cp "$SCRIPT_DIR/serit_takip.service" /etc/systemd/system/
 
-# Kullanici adini guncelle (pi degilse)
+# Kullanici adini otomatik ayarla
 CURRENT_USER=$(whoami)
 CURRENT_HOME=$HOME
 
-if [ "$CURRENT_USER" != "pi" ]; then
-    warning "Kullanici adi 'pi' degil, servis dosyasi guncelleniyor..."
-    sudo sed -i "s/User=pi/User=$CURRENT_USER/g" /etc/systemd/system/serit_takip.service
-    sudo sed -i "s/Group=pi/Group=$CURRENT_USER/g" /etc/systemd/system/serit_takip.service
-    sudo sed -i "s|/home/pi/|$CURRENT_HOME/|g" /etc/systemd/system/serit_takip.service
-fi
+info "Servis kullanici ayarlaniyor: $CURRENT_USER"
+sudo sed -i "s/__USER__/$CURRENT_USER/g" /etc/systemd/system/serit_takip.service
+sudo sed -i "s|__HOME__|$CURRENT_HOME|g" /etc/systemd/system/serit_takip.service
 
 info "Systemd yeniden yukleniyor..."
 sudo systemctl daemon-reload

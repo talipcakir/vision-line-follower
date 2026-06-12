@@ -325,7 +325,7 @@ def api_control_stop():
 @app.route('/api/command', methods=['POST'])
 def api_command():
     """Manuel komut gönder"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     command = data.get('command', '').strip().upper()
 
     if not command:
@@ -373,7 +373,7 @@ def api_config_get():
 @app.route('/api/config/speed', methods=['POST'])
 def api_config_speed():
     """Hız ayarla"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     speed = data.get('speed')
 
     if speed is None:
@@ -399,7 +399,7 @@ def api_config_speed():
 @app.route('/api/config/pid', methods=['POST'])
 def api_config_pid():
     """PID parametrelerini ayarla"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
 
     try:
         kp = max(0, min(10, float(data.get('kp', 1.0))))
@@ -471,7 +471,7 @@ def api_hsv_get():
 @app.route('/api/hsv', methods=['POST'])
 def api_hsv_set():
     """HSV ayarlarını güncelle"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
 
     logger.info(f"HSV ayarları güncelleniyor: {data}")
 
@@ -513,7 +513,7 @@ def api_hsv_reset():
 @app.route('/api/hsv/toggle', methods=['POST'])
 def api_hsv_toggle():
     """Renk algılamayı aç/kapat"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     enabled = data.get('enabled')
 
     if enabled is None:
@@ -616,7 +616,7 @@ def api_arduino_sketches():
 @app.route('/api/arduino/compile', methods=['POST'])
 def api_arduino_compile():
     """Sketch derle"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     sketch_name = data.get('sketch')
 
     if not sketch_name:
@@ -640,7 +640,7 @@ def api_arduino_compile():
 @app.route('/api/arduino/upload', methods=['POST'])
 def api_arduino_upload():
     """Sketch yükle"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     sketch_name = data.get('sketch')
 
     if not sketch_name:
@@ -679,7 +679,7 @@ def api_arduino_upload():
 @app.route('/api/connect', methods=['POST'])
 def api_connect():
     """Arduino'ya bağlan"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     port = data.get('port')
 
     logger.info(f"Bağlanılıyor: {port or 'otomatik'}")

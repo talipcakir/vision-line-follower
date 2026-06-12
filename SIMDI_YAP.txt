@@ -1,0 +1,26 @@
+ADIM 1: Servisi durdur
+----------------------
+sudo systemctl stop serit_takip.service
+
+
+ADIM 2: Guncellemeleri cek
+--------------------------
+cd ~/vision-line-follower
+git pull
+
+
+ADIM 3: Satir sonu duzelt
+-------------------------
+find . -type f -name "*.py" -exec sed -i 's/\r$//' {} \;
+find . -type f -name "*.js" -exec sed -i 's/\r$//' {} \;
+
+
+ADIM 4: Servisi yeniden baslat
+------------------------------
+sudo systemctl daemon-reload
+sudo systemctl restart serit_takip.service
+
+
+ADIM 5: Kontrol et
+------------------
+sudo systemctl status serit_takip.service

@@ -113,7 +113,10 @@ async function apiCall(endpoint, method = 'GET', data = null) {
         headers: { 'Content-Type': 'application/json' }
     };
 
-    if (data) {
+    // POST isteklerinde her zaman body gönder
+    if (method === 'POST') {
+        options.body = JSON.stringify(data || {});
+    } else if (data) {
         options.body = JSON.stringify(data);
     }
 
