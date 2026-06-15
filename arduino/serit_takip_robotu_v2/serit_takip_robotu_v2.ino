@@ -1,37 +1,29 @@
 // ============================================================
-//  SERIT TAKIP ROBOTU v2.0 - PID Kontrol + Web Yönetim
+//  SERIT TAKIP ROBOTU v2.2 - Akıllı Çizgi Arama + Pi Entegrasyonu
 //  Dönem Bitirme Projesi
 // ============================================================
 //
-//  YENİ ÖZELLİKLER:
-//  - PID kontrol ile yumuşak dönüşler
-//  - Web arayüzünden hız ve PID ayarı
-//  - Sensör değerlerini okuma
-//  - Heartbeat desteği
-//  - EEPROM ile ayar saklama
+//  SENSÖR: Siyah çizgi = 0 (LOW), Beyaz zemin = 1 (HIGH)
 //
 //  KOMUTLAR:
 //  PING              -> PONG
 //  STOP              -> OK_STOPPED
 //  GO                -> OK_RUNNING
-//  STATUS            -> STATUS_STOPPED | STATUS_RUNNING
+//  STATUS            -> STATUS_STOPPED | STATUS_RUNNING | STATUS_SEARCHING
 //  SPEED:<0-255>     -> OK_SPEED:<value>
 //  PID:<Kp>,<Ki>,<Kd> -> OK_PID:<Kp>,<Ki>,<Kd>
 //  SENSORS           -> SENSORS:<s1>,<s2>,<s3>,<s4>,<s5>
 //  CONFIG            -> CONFIG:<speed>,<Kp>,<Ki>,<Kd>
 //  SAVE              -> OK_SAVED
 //  LOAD              -> OK_LOADED
-//  VERSION           -> VERSION:2.0.0
+//  VERSION           -> VERSION:2.2.0
 //  RESET             -> OK_RESET
 //
 // ============================================================
 
 #include <EEPROM.h>
 
-// ============================================================
-//  VERSİYON
-// ============================================================
-const char* FIRMWARE_VERSION = "2.0.0";
+const char* FIRMWARE_VERSION = "2.2.0";
 
 // ============================================================
 //  PIN TANIMLARI
@@ -55,35 +47,59 @@ const int pinS4 = 7;    // Hafif sağ
 const int pinS5 = 12;   // En sağ
 
 // ============================================================
-//  AYARLAR VE DEĞİŞKENLER
+//  SENSÖR POLARİTESİ
+// ============================================================
+// SIYAH çizgi üzerinde sensör 0 (LOW) veriyor
+// BEYAZ zemin üzerinde sensör 1 (HIGH) veriyor
+const int CIZGI = 0;  // Çizgi algılandığında okunan değer
+
+// ============================================================
+//  AYARLAR
 // ============================================================
 
-// Hız ayarı (0-255)
-int baseSpeed = 100;
+int baseSpeed = 150;
+int searchSpeed = 100;
+int reverseSpeed = 80;
 
 // PID parametreleri
-float Kp = 1.0;
+float Kp = 1.5;
 float Ki = 0.0;
-float Kd = 0.5;
+float Kd = 0.8;
 
 // PID değişkenleri
 float lastError = 0;
 float integral = 0;
 
-// Durum
-bool robotStopped = false;
+// Robot durumları
+enum RobotState {
+  STATE_STOPPED,
+  STATE_RUNNING,
+  STATE_SEARCHING,
+  STATE_REVERSING
+};
+
+RobotState robotState = STATE_STOPPED;
 String serialBuffer = "";
 
-// Son bilinen hata yönü (çizgi kaybında kullanılır)
-int lastDirection = 0;  // -1: sol, 0: düz, 1: sağ
+// Çizgi takip değişkenleri
+int lastDirection = 0;           // -1: sol, 0: düz, 1: sağ
+unsigned long lastLineTime = 0;  // Son çizgi görülme zamanı
+unsigned long searchStartTime = 0;
+int searchPhase = 0;
 
-// EEPROM adresleri
-const int EEPROM_MAGIC = 0;      // Geçerlilik bayrağı
-const int EEPROM_SPEED = 1;      // baseSpeed
-const int EEPROM_KP = 2;         // Kp (4 byte float)
-const int EEPROM_KI = 6;         // Ki (4 byte float)
-const int EEPROM_KD = 10;        // Kd (4 byte float)
-const byte EEPROM_MAGIC_VALUE = 0xAB;
+// Zaman sabitleri (ms)
+const unsigned long SEARCH_TIMEOUT = 300;    // Çizgi kaybolunca aramaya başla
+const unsigned long REVERSE_TIME = 250;      // Geri gitme süresi
+const unsigned long SEARCH_PHASE_TIME = 350; // Her arama fazı süresi
+const int MAX_SEARCH_PHASES = 8;             // Maksimum arama fazı
+
+// EEPROM
+const int EEPROM_MAGIC = 0;
+const int EEPROM_SPEED = 1;
+const int EEPROM_KP = 2;
+const int EEPROM_KI = 6;
+const int EEPROM_KD = 10;
+const byte EEPROM_MAGIC_VALUE = 0xAD;
 
 // ============================================================
 //  SETUP
@@ -106,15 +122,10 @@ void setup() {
   pinMode(pinS4, INPUT);
   pinMode(pinS5, INPUT);
 
-  // Motor yönü: ileri
-  digitalWrite(pinIN1, HIGH);
-  digitalWrite(pinIN2, LOW);
-  digitalWrite(pinIN3, HIGH);
-  digitalWrite(pinIN4, LOW);
-
-  // EEPROM'dan ayarları yükle
+  stopMotors();
   loadSettings();
 
+  delay(100);
   Serial.println("ROBOT_READY");
 }
 
@@ -122,29 +133,231 @@ void setup() {
 //  ANA DÖNGÜ
 // ============================================================
 void loop() {
-  // Seri komutları işle
   processSerial();
 
-  // Robot durdurulmuşsa motorları kapat
-  if (robotStopped) {
-    analogWrite(pinENA, 0);
-    analogWrite(pinENB, 0);
+  if (robotState == STATE_STOPPED) {
+    stopMotors();
     return;
   }
 
-  // Sensörleri oku ve PID ile motor kontrolü yap
-  int error = calculateError();
-  int pidOutput = calculatePID(error);
-  applyMotorSpeeds(pidOutput);
+  // Sensörleri oku (0 = çizgi, 1 = beyaz)
+  int s1 = digitalRead(pinS1);
+  int s2 = digitalRead(pinS2);
+  int s3 = digitalRead(pinS3);
+  int s4 = digitalRead(pinS4);
+  int s5 = digitalRead(pinS5);
+
+  // Kaç sensör çizgi görüyor?
+  int lineCount = 0;
+  if (s1 == CIZGI) lineCount++;
+  if (s2 == CIZGI) lineCount++;
+  if (s3 == CIZGI) lineCount++;
+  if (s4 == CIZGI) lineCount++;
+  if (s5 == CIZGI) lineCount++;
+
+  unsigned long currentTime = millis();
+
+  // Çizgi görülüyor mu?
+  if (lineCount > 0) {
+    lastLineTime = currentTime;
+
+    if (robotState == STATE_SEARCHING || robotState == STATE_REVERSING) {
+      robotState = STATE_RUNNING;
+      integral = 0;
+      lastError = 0;
+      searchPhase = 0;
+    }
+
+    // PID takip
+    int error = calculateError(s1, s2, s3, s4, s5, lineCount);
+    int pidOutput = calculatePID(error);
+    applyMotorSpeeds(pidOutput);
+  }
+  else {
+    // Çizgi kayıp!
+    handleLineLost(currentTime);
+  }
 }
 
 // ============================================================
-//  SERİ KOMUT İŞLEME
+//  HATA HESAPLAMA
+// ============================================================
+int calculateError(int s1, int s2, int s3, int s4, int s5, int lineCount) {
+  // Ağırlıklı ortalama: -2 (sol) ile +2 (sağ) arası
+  // CIZGI (0) gören sensörler hesaba katılır
+  int weightedSum = 0;
+
+  if (s1 == CIZGI) weightedSum += -2;
+  if (s2 == CIZGI) weightedSum += -1;
+  if (s3 == CIZGI) weightedSum += 0;
+  if (s4 == CIZGI) weightedSum += 1;
+  if (s5 == CIZGI) weightedSum += 2;
+
+  float position = (float)weightedSum / lineCount;
+
+  // Son yönü güncelle
+  if (position < -0.5) lastDirection = -1;
+  else if (position > 0.5) lastDirection = 1;
+  else lastDirection = 0;
+
+  return (int)(position * 10);  // -20 ile +20 arası
+}
+
+// ============================================================
+//  PID KONTROL
+// ============================================================
+int calculatePID(int error) {
+  float P = Kp * error;
+
+  integral += error;
+  integral = constrain(integral, -100, 100);
+  float I = Ki * integral;
+
+  float D = Kd * (error - lastError);
+  lastError = error;
+
+  int output = (int)(P + I + D);
+  return constrain(output, -baseSpeed, baseSpeed);
+}
+
+void applyMotorSpeeds(int pidOutput) {
+  int leftSpeed = baseSpeed + pidOutput;
+  int rightSpeed = baseSpeed - pidOutput;
+
+  leftSpeed = constrain(leftSpeed, 0, 255);
+  rightSpeed = constrain(rightSpeed, 0, 255);
+
+  // İleri yön
+  digitalWrite(pinIN1, HIGH);
+  digitalWrite(pinIN2, LOW);
+  digitalWrite(pinIN3, HIGH);
+  digitalWrite(pinIN4, LOW);
+
+  analogWrite(pinENA, leftSpeed);
+  analogWrite(pinENB, rightSpeed);
+}
+
+// ============================================================
+//  ÇİZGİ ARAMA
+// ============================================================
+void handleLineLost(unsigned long currentTime) {
+  unsigned long lostDuration = currentTime - lastLineTime;
+
+  // İlk kısa süre: son yöne doğru git
+  if (lostDuration < SEARCH_TIMEOUT) {
+    if (lastDirection < 0) {
+      setMotors(-searchSpeed, searchSpeed);  // Sola dön
+    } else if (lastDirection > 0) {
+      setMotors(searchSpeed, -searchSpeed);  // Sağa dön
+    } else {
+      setMotors(searchSpeed, searchSpeed);   // Düz git
+    }
+    return;
+  }
+
+  // Arama moduna geç
+  if (robotState != STATE_SEARCHING && robotState != STATE_REVERSING) {
+    robotState = STATE_REVERSING;
+    searchStartTime = currentTime;
+    searchPhase = 0;
+  }
+
+  // Geri gitme fazı
+  if (robotState == STATE_REVERSING) {
+    if (currentTime - searchStartTime < REVERSE_TIME) {
+      setMotorsReverse(reverseSpeed, reverseSpeed);
+    } else {
+      robotState = STATE_SEARCHING;
+      searchStartTime = currentTime;
+      searchPhase = 0;
+    }
+    return;
+  }
+
+  // Zigzag arama
+  if (robotState == STATE_SEARCHING) {
+    unsigned long searchElapsed = currentTime - searchStartTime;
+    int currentPhase = searchElapsed / SEARCH_PHASE_TIME;
+
+    if (currentPhase >= MAX_SEARCH_PHASES) {
+      // Tekrar geri git ve ters yöne bak
+      robotState = STATE_REVERSING;
+      searchStartTime = currentTime;
+      lastDirection = -lastDirection;
+      if (lastDirection == 0) lastDirection = 1;
+      return;
+    }
+
+    int turnIntensity = searchSpeed + (currentPhase * 15);
+    turnIntensity = min(turnIntensity, 180);
+
+    // Zigzag: önce son bilinen yöne, sonra ters yöne
+    if (currentPhase % 2 == 0) {
+      if (lastDirection <= 0) {
+        setMotors(-turnIntensity, turnIntensity);
+      } else {
+        setMotors(turnIntensity, -turnIntensity);
+      }
+    } else {
+      if (lastDirection <= 0) {
+        setMotors(turnIntensity, -turnIntensity);
+      } else {
+        setMotors(-turnIntensity, turnIntensity);
+      }
+    }
+  }
+}
+
+// ============================================================
+//  MOTOR KONTROL
+// ============================================================
+void setMotors(int leftSpeed, int rightSpeed) {
+  if (leftSpeed >= 0) {
+    digitalWrite(pinIN1, HIGH);
+    digitalWrite(pinIN2, LOW);
+    analogWrite(pinENA, leftSpeed);
+  } else {
+    digitalWrite(pinIN1, LOW);
+    digitalWrite(pinIN2, HIGH);
+    analogWrite(pinENA, -leftSpeed);
+  }
+
+  if (rightSpeed >= 0) {
+    digitalWrite(pinIN3, HIGH);
+    digitalWrite(pinIN4, LOW);
+    analogWrite(pinENB, rightSpeed);
+  } else {
+    digitalWrite(pinIN3, LOW);
+    digitalWrite(pinIN4, HIGH);
+    analogWrite(pinENB, -rightSpeed);
+  }
+}
+
+void setMotorsReverse(int leftSpeed, int rightSpeed) {
+  digitalWrite(pinIN1, LOW);
+  digitalWrite(pinIN2, HIGH);
+  analogWrite(pinENA, leftSpeed);
+
+  digitalWrite(pinIN3, LOW);
+  digitalWrite(pinIN4, HIGH);
+  analogWrite(pinENB, rightSpeed);
+}
+
+void stopMotors() {
+  analogWrite(pinENA, 0);
+  analogWrite(pinENB, 0);
+  digitalWrite(pinIN1, LOW);
+  digitalWrite(pinIN2, LOW);
+  digitalWrite(pinIN3, LOW);
+  digitalWrite(pinIN4, LOW);
+}
+
+// ============================================================
+//  SERİ KOMUTLAR
 // ============================================================
 void processSerial() {
   while (Serial.available() > 0) {
     char c = Serial.read();
-
     if (c == '\n') {
       serialBuffer.trim();
       handleCommand(serialBuffer);
@@ -156,32 +369,39 @@ void processSerial() {
 }
 
 void handleCommand(String cmd) {
-  // PING: Bağlantı testi
   if (cmd == "PING") {
     Serial.println("PONG");
   }
-  // STOP: Robotu durdur
   else if (cmd == "STOP") {
-    robotStopped = true;
+    robotState = STATE_STOPPED;
+    stopMotors();
     Serial.println("OK_STOPPED");
   }
-  // GO: Robota devam et
   else if (cmd == "GO") {
-    robotStopped = false;
-    integral = 0;  // PID integralini sıfırla
+    robotState = STATE_RUNNING;
+    integral = 0;
     lastError = 0;
+    lastLineTime = millis();
+    searchPhase = 0;
     Serial.println("OK_RUNNING");
   }
-  // STATUS: Durum sorgula
   else if (cmd == "STATUS") {
-    Serial.println(robotStopped ? "STATUS_STOPPED" : "STATUS_RUNNING");
+    switch (robotState) {
+      case STATE_STOPPED:
+        Serial.println("STATUS_STOPPED");
+        break;
+      case STATE_RUNNING:
+        Serial.println("STATUS_RUNNING");
+        break;
+      default:
+        Serial.println("STATUS_SEARCHING");
+        break;
+    }
   }
-  // VERSION: Firmware versiyonu
   else if (cmd == "VERSION") {
     Serial.print("VERSION:");
     Serial.println(FIRMWARE_VERSION);
   }
-  // SENSORS: Sensör değerlerini oku
   else if (cmd == "SENSORS") {
     Serial.print("SENSORS:");
     Serial.print(digitalRead(pinS1));
@@ -194,7 +414,6 @@ void handleCommand(String cmd) {
     Serial.print(",");
     Serial.println(digitalRead(pinS5));
   }
-  // CONFIG: Mevcut ayarları göster
   else if (cmd == "CONFIG") {
     Serial.print("CONFIG:");
     Serial.print(baseSpeed);
@@ -205,31 +424,24 @@ void handleCommand(String cmd) {
     Serial.print(",");
     Serial.println(Kd, 2);
   }
-  // SPEED:<value>: Hız ayarla
   else if (cmd.startsWith("SPEED:")) {
     int newSpeed = cmd.substring(6).toInt();
     newSpeed = constrain(newSpeed, 0, 255);
     baseSpeed = newSpeed;
+    searchSpeed = max(60, baseSpeed - 50);
+    reverseSpeed = max(50, baseSpeed - 70);
     Serial.print("OK_SPEED:");
     Serial.println(baseSpeed);
   }
-  // PID:<Kp>,<Ki>,<Kd>: PID parametrelerini ayarla
   else if (cmd.startsWith("PID:")) {
     String params = cmd.substring(4);
-    int comma1 = params.indexOf(',');
-    int comma2 = params.lastIndexOf(',');
+    int c1 = params.indexOf(',');
+    int c2 = params.lastIndexOf(',');
 
-    if (comma1 > 0 && comma2 > comma1) {
-      Kp = params.substring(0, comma1).toFloat();
-      Ki = params.substring(comma1 + 1, comma2).toFloat();
-      Kd = params.substring(comma2 + 1).toFloat();
-
-      // Sınırla
-      Kp = constrain(Kp, 0.0, 10.0);
-      Ki = constrain(Ki, 0.0, 5.0);
-      Kd = constrain(Kd, 0.0, 10.0);
-
-      // İntegrali sıfırla
+    if (c1 > 0 && c2 > c1) {
+      Kp = constrain(params.substring(0, c1).toFloat(), 0.0, 10.0);
+      Ki = constrain(params.substring(c1 + 1, c2).toFloat(), 0.0, 5.0);
+      Kd = constrain(params.substring(c2 + 1).toFloat(), 0.0, 10.0);
       integral = 0;
 
       Serial.print("OK_PID:");
@@ -239,38 +451,36 @@ void handleCommand(String cmd) {
       Serial.print(",");
       Serial.println(Kd, 2);
     } else {
-      Serial.println("ERROR:INVALID_PID_FORMAT");
+      Serial.println("ERROR:INVALID_PID");
     }
   }
-  // SAVE: Ayarları EEPROM'a kaydet
   else if (cmd == "SAVE") {
     saveSettings();
     Serial.println("OK_SAVED");
   }
-  // LOAD: Ayarları EEPROM'dan yükle
   else if (cmd == "LOAD") {
     loadSettings();
     Serial.println("OK_LOADED");
   }
-  // RESET: Varsayılan ayarlara dön
   else if (cmd == "RESET") {
-    baseSpeed = 100;
-    Kp = 1.0;
+    baseSpeed = 150;
+    searchSpeed = 100;
+    reverseSpeed = 80;
+    Kp = 1.5;
     Ki = 0.0;
-    Kd = 0.5;
+    Kd = 0.8;
     integral = 0;
     lastError = 0;
     Serial.println("OK_RESET");
   }
-  // Bilinmeyen komut
   else if (cmd.length() > 0) {
-    Serial.print("ERROR:UNKNOWN_CMD:");
+    Serial.print("ERROR:UNKNOWN:");
     Serial.println(cmd);
   }
 }
 
 // ============================================================
-//  EEPROM FONKSİYONLARI
+//  EEPROM
 // ============================================================
 void saveSettings() {
   EEPROM.write(EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
@@ -282,87 +492,16 @@ void saveSettings() {
 
 void loadSettings() {
   if (EEPROM.read(EEPROM_MAGIC) == EEPROM_MAGIC_VALUE) {
-    baseSpeed = EEPROM.read(EEPROM_SPEED);
+    baseSpeed = constrain(EEPROM.read(EEPROM_SPEED), 0, 255);
     EEPROM.get(EEPROM_KP, Kp);
     EEPROM.get(EEPROM_KI, Ki);
     EEPROM.get(EEPROM_KD, Kd);
 
-    // Geçerlilik kontrolü
-    baseSpeed = constrain(baseSpeed, 0, 255);
     Kp = constrain(Kp, 0.0, 10.0);
     Ki = constrain(Ki, 0.0, 5.0);
     Kd = constrain(Kd, 0.0, 10.0);
+
+    searchSpeed = max(60, baseSpeed - 50);
+    reverseSpeed = max(50, baseSpeed - 70);
   }
 }
-
-// ============================================================
-//  PID KONTROL
-// ============================================================
-
-// Sensörlerden hata hesapla
-// Hata: -2 (en sol) ile +2 (en sağ) arası
-int calculateError() {
-  int s1 = digitalRead(pinS1);  // En sol
-  int s2 = digitalRead(pinS2);  // Hafif sol
-  int s3 = digitalRead(pinS3);  // Orta
-  int s4 = digitalRead(pinS4);  // Hafif sağ
-  int s5 = digitalRead(pinS5);  // En sağ
-
-  // Ağırlıklı ortalama ile hata hesapla
-  // HIGH = çizgi var (siyah), LOW = çizgi yok (beyaz)
-  // Sensör ağırlıkları: -2, -1, 0, +1, +2
-
-  int sum = s1 + s2 + s3 + s4 + s5;
-
-  if (sum == 0) {
-    // Hiç sensör çizgi görmüyor - son yöne devam et
-    return lastDirection * 3;
-  }
-
-  float weightedSum = (s1 * -2) + (s2 * -1) + (s3 * 0) + (s4 * 1) + (s5 * 2);
-  float error = weightedSum / sum;
-
-  // Son yönü güncelle
-  if (error < -0.5) lastDirection = -1;
-  else if (error > 0.5) lastDirection = 1;
-  else lastDirection = 0;
-
-  return (int)(error * 10);  // -20 ile +20 arası
-}
-
-// PID çıktısı hesapla
-int calculatePID(int error) {
-  // Proportional
-  float P = Kp * error;
-
-  // Integral (windup önleme ile)
-  integral += error;
-  integral = constrain(integral, -100, 100);
-  float I = Ki * integral;
-
-  // Derivative
-  float D = Kd * (error - lastError);
-  lastError = error;
-
-  // Toplam PID çıktısı
-  int output = (int)(P + I + D);
-  return constrain(output, -baseSpeed, baseSpeed);
-}
-
-// Motor hızlarını uygula
-void applyMotorSpeeds(int pidOutput) {
-  int leftSpeed = baseSpeed + pidOutput;
-  int rightSpeed = baseSpeed - pidOutput;
-
-  // Hız sınırları
-  leftSpeed = constrain(leftSpeed, 0, 255);
-  rightSpeed = constrain(rightSpeed, 0, 255);
-
-  // Motorlara uygula
-  analogWrite(pinENA, leftSpeed);
-  analogWrite(pinENB, rightSpeed);
-}
-
-// ============================================================
-//  KODUN SONU
-// ============================================================

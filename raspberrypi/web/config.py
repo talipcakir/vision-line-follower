@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vision Line Follower - Konfigürasyon Modülü v2.1
+Vision Line Follower - Konfigürasyon Modülü v2.2
 Dinamik HSV kalibrasyonu ve gelişmiş ayarlar
 """
 
@@ -43,11 +43,11 @@ _load_env_file()
 
 @dataclass
 class SerialConfig:
-    port: str = field(default_factory=lambda: _get_env('SERIAL_PORT', '/dev/ttyACM0'))
+    port: str = field(default_factory=lambda: _get_env('SERIAL_PORT', '/dev/ttyUSB0'))
     baud_rate: int = field(default_factory=lambda: _get_env('BAUD_RATE', '9600', int))
     timeout: float = field(default_factory=lambda: _get_env('SERIAL_TIMEOUT', '1.0', float))
     possible_ports: List[str] = field(default_factory=lambda: [
-        '/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1',
+        '/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1',
         'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8'
     ])
 

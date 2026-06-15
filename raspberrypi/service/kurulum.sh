@@ -1,17 +1,24 @@
 #!/bin/bash
 # ============================================================
-#  VISION LINE FOLLOWER v2.1 - Otomatik Kurulum Scripti
+#  VISION LINE FOLLOWER v2.2 - Tek Tuşla Kurulum
 # ============================================================
+#
+#  Bu script tek komutla:
+#  1. Tüm bağımlılıkları yükler
+#  2. Arduino CLI kurar
+#  3. Seri port yetkilerini ayarlar
+#  4. Kamera ayarlarını yapar
+#  5. Systemd servisini kurar
+#  6. Projeyi başlatır
 #
 #  KULLANIM:
-#  chmod +x kurulum.sh
-#  ./kurulum.sh
+#  chmod +x kurulum.sh && ./kurulum.sh
 #
 # ============================================================
 
-set -e  # Hata durumunda dur
+set -e
 
-# Renkli cikti
+# Renkler
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -19,252 +26,335 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Log fonksiyonlari
+# Fonksiyonlar
 info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warning() { echo -e "${YELLOW}[UYARI]${NC} $1"; }
-error() { echo -e "${RED}[HATA]${NC} $1"; }
-header() { echo -e "${CYAN}$1${NC}"; }
+error() { echo -e "${RED}[HATA]${NC} $1"; exit 1; }
+header() { echo -e "\n${CYAN}============================================================${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}============================================================${NC}"; }
 
-echo ""
-header "============================================================"
-header "  VISION LINE FOLLOWER v2.1 - Kurulum"
-header "  Web Yonetim Arayuzu + HSV Kalibrasyon"
-header "============================================================"
-echo ""
+# ============================================================
+#  KONTROLLER
+# ============================================================
 
-# ----- KONTROLLER -----
+header "VISION LINE FOLLOWER v2.2 - Kurulum Başlıyor"
 
-# Root kontrolu
+# Root kontrolü
 if [ "$EUID" -eq 0 ]; then
-    error "Bu script root olarak calistirilmamali!"
-    error "Sudo sifreniz gerektiginde sorulacaktir."
-    exit 1
+    error "Bu scripti root olarak çalıştırmayın! Normal kullanıcı olarak çalıştırın."
 fi
 
-# Script dizini
+# Raspberry Pi kontrolü
+if [ ! -f /proc/device-tree/model ]; then
+    warning "Bu bir Raspberry Pi değil gibi görünüyor. Devam ediliyor..."
+else
+    MODEL=$(cat /proc/device-tree/model)
+    info "Cihaz: $MODEL"
+fi
+
+# Dizinleri belirle
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 RASPBERRYPI_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$RASPBERRYPI_DIR")"
 INSTALL_DIR="$HOME/vision-line-follower"
 LOG_DIR="/var/log/vision-line-follower"
 
-info "Script dizini: $SCRIPT_DIR"
 info "Proje dizini: $PROJECT_DIR"
 info "Kurulum dizini: $INSTALL_DIR"
-echo ""
 
-# ----- ADIM 1: PAKETLERI YUKLE -----
+# ============================================================
+#  ADIM 1: SİSTEM GÜNCELLEMESİ
+# ============================================================
 
-header "============================================================"
-header "  ADIM 1: Gerekli paketler yukleniyor"
-header "============================================================"
+header "ADIM 1/7: Sistem Güncelleniyor"
 
-info "Paket listesi guncelleniyor..."
-sudo apt update
+info "Paket listesi güncelleniyor..."
+sudo apt update || error "apt update başarısız"
 
-info "Python paketleri yukleniyor..."
+info "Temel paketler yükleniyor..."
 sudo apt install -y \
     python3-pip \
-    python3-opencv \
+    python3-venv \
+    python3-dev \
+    git \
+    curl \
+    || error "Temel paket kurulumu başarısız"
+
+success "Sistem güncellendi"
+
+# ============================================================
+#  ADIM 2: PYTHON BAĞIMLILIKLARI
+# ============================================================
+
+header "ADIM 2/7: Python Bağımlılıkları Yükleniyor"
+
+# Sistem Python paketleri (apt ile - daha stabil)
+info "Python paketleri yükleniyor (apt)..."
+sudo apt install -y \
     python3-flask \
     python3-numpy \
-    python3-serial
+    python3-serial \
+    python3-opencv \
+    || error "Python paket kurulumu başarısız"
 
-# PiCamera2 kurulumu (varsa)
+# PiCamera2 (varsa)
 if sudo apt-cache show python3-picamera2 &> /dev/null; then
-    info "PiCamera2 yukleniyor..."
-    sudo apt install -y python3-picamera2
+    info "PiCamera2 yükleniyor..."
+    sudo apt install -y python3-picamera2 python3-libcamera || true
+    success "PiCamera2 yüklendi"
 else
-    warning "python3-picamera2 bulunamadi (USB kamera kullanilabilir)"
+    warning "PiCamera2 bulunamadı - USB kamera kullanılabilir"
 fi
 
-success "Paketler yuklendi"
-echo ""
+success "Python bağımlılıkları yüklendi"
 
-# ----- ADIM 2: ARDUINO CLI KURULUMU -----
+# ============================================================
+#  ADIM 3: ARDUINO CLI
+# ============================================================
 
-header "============================================================"
-header "  ADIM 2: Arduino CLI kuruluyor"
-header "============================================================"
+header "ADIM 3/7: Arduino CLI Kuruluyor"
 
 if command -v arduino-cli &> /dev/null; then
-    success "Arduino CLI zaten kurulu"
-    arduino-cli version
+    CLI_VERSION=$(arduino-cli version 2>/dev/null | head -1)
+    success "Arduino CLI zaten kurulu: $CLI_VERSION"
 else
     info "Arduino CLI indiriliyor..."
-    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+
+    # Temiz kurulum
+    mkdir -p "$HOME/.local/bin"
+
+    # İndir ve kur
+    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/.local/bin" sh || error "Arduino CLI indirilemedi"
 
     # PATH'e ekle
-    if [ -f "$HOME/bin/arduino-cli" ]; then
-        sudo mv "$HOME/bin/arduino-cli" /usr/local/bin/
-        success "Arduino CLI /usr/local/bin/'e taşındı"
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+        export PATH="$HOME/.local/bin:$PATH"
     fi
-
-    # PATH kontrolu
-    if [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
-        echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
-        export PATH="/usr/local/bin:$PATH"
-    fi
-
-    info "Arduino AVR core yukleniyor..."
-    arduino-cli core install arduino:avr
 
     success "Arduino CLI kuruldu"
 fi
-echo ""
 
-# ----- ADIM 3: SERI PORT YETKISI -----
+# Arduino AVR core
+info "Arduino AVR core kontrol ediliyor..."
+if ! arduino-cli core list 2>/dev/null | grep -q "arduino:avr"; then
+    info "Arduino AVR core yükleniyor..."
+    arduino-cli core update-index
+    arduino-cli core install arduino:avr || warning "AVR core yüklenemedi"
+fi
 
-header "============================================================"
-header "  ADIM 3: Seri port yetkisi ayarlaniyor"
-header "============================================================"
+success "Arduino CLI hazır"
+
+# ============================================================
+#  ADIM 4: YETKİLER
+# ============================================================
+
+header "ADIM 4/7: Yetkiler Ayarlanıyor"
 
 NEED_REBOOT=false
 
+# dialout grubu (seri port)
 if groups $USER | grep -q dialout; then
-    success "Kullanici zaten dialout grubunda"
+    success "Seri port yetkisi mevcut"
 else
-    info "Kullanici dialout grubuna ekleniyor..."
+    info "Seri port yetkisi ekleniyor..."
     sudo usermod -a -G dialout $USER
-    warning "Yetki degisikligi icin yeniden baslama gerekli!"
     NEED_REBOOT=true
+    warning "Seri port için yeniden başlatma gerekecek"
 fi
 
-# Video grubu (kamera erişimi)
+# video grubu (kamera)
 if groups $USER | grep -q video; then
-    success "Kullanici zaten video grubunda"
+    success "Kamera yetkisi mevcut"
 else
-    info "Kullanici video grubuna ekleniyor..."
+    info "Kamera yetkisi ekleniyor..."
     sudo usermod -a -G video $USER
 fi
 
-echo ""
+# i2c grubu (sensörler için)
+if groups $USER | grep -q i2c; then
+    success "I2C yetkisi mevcut"
+else
+    info "I2C yetkisi ekleniyor..."
+    sudo usermod -a -G i2c $USER 2>/dev/null || true
+fi
 
-# ----- ADIM 4: LOG DIZINI -----
-
-header "============================================================"
-header "  ADIM 4: Log dizini olusturuluyor"
-header "============================================================"
-
-info "Log dizini: $LOG_DIR"
+# Log dizini
+info "Log dizini oluşturuluyor..."
 sudo mkdir -p "$LOG_DIR"
 sudo chown $USER:$USER "$LOG_DIR"
 sudo chmod 755 "$LOG_DIR"
 
-success "Log dizini hazir"
-echo ""
+success "Yetkiler ayarlandı"
 
-# ----- ADIM 5: DOSYALARI KOPYALA -----
+# ============================================================
+#  ADIM 5: PROJE DOSYALARI
+# ============================================================
 
-header "============================================================"
-header "  ADIM 5: Proje dosyalari kopyalaniyor"
-header "============================================================"
+header "ADIM 5/7: Proje Dosyaları Kopyalanıyor"
 
-# Kurulum dizinini olustur
-mkdir -p "$INSTALL_DIR"
+# Eğer farklı dizindeyse kopyala
+if [ "$PROJECT_DIR" != "$INSTALL_DIR" ]; then
+    info "Proje kopyalanıyor: $INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
 
-# Tum projeyi kopyala
-info "Proje dosyalari kopyalaniyor..."
-cp -r "$PROJECT_DIR"/* "$INSTALL_DIR/"
+    # Mevcut dosyaları yedekle
+    if [ -d "$INSTALL_DIR/raspberrypi" ]; then
+        warning "Mevcut kurulum bulundu, yedekleniyor..."
+        BACKUP_DIR="$HOME/vision-line-follower-backup-$(date +%Y%m%d-%H%M%S)"
+        mv "$INSTALL_DIR" "$BACKUP_DIR"
+        info "Yedek: $BACKUP_DIR"
+    fi
 
-# Calistirma yetkisi ver
-chmod +x "$INSTALL_DIR/raspberrypi/service/kurulum.sh"
+    cp -r "$PROJECT_DIR"/* "$INSTALL_DIR/"
+    success "Dosyalar kopyalandı"
+else
+    success "Proje dizini zaten doğru konumda"
+fi
 
-success "Dosyalar kopyalandi: $INSTALL_DIR"
-echo ""
+# Çalıştırma yetkisi
+chmod +x "$INSTALL_DIR/raspberrypi/service/kurulum.sh" 2>/dev/null || true
 
-# ----- ADIM 6: SERVIS DOSYASINI KOPYALA -----
+# ============================================================
+#  ADIM 6: SYSTEMD SERVİSİ
+# ============================================================
 
-header "============================================================"
-header "  ADIM 6: Systemd servisi kuruluyor"
-header "============================================================"
+header "ADIM 6/7: Systemd Servisi Kuruluyor"
 
-info "Servis dosyasi kopyalaniyor..."
-sudo cp "$SCRIPT_DIR/serit_takip.service" /etc/systemd/system/
+SERVICE_FILE="/etc/systemd/system/serit_takip.service"
+SOURCE_SERVICE="$INSTALL_DIR/raspberrypi/service/serit_takip.service"
 
-# Kullanici adini otomatik ayarla
-CURRENT_USER=$(whoami)
-CURRENT_HOME=$HOME
+# Servis dosyasını oluştur
+info "Servis dosyası oluşturuluyor..."
 
-info "Servis kullanici ayarlaniyor: $CURRENT_USER"
-sudo sed -i "s/__USER__/$CURRENT_USER/g" /etc/systemd/system/serit_takip.service
-sudo sed -i "s|__HOME__|$CURRENT_HOME|g" /etc/systemd/system/serit_takip.service
+sudo tee "$SERVICE_FILE" > /dev/null << EOF
+[Unit]
+Description=Vision Line Follower - Web Yonetim Arayuzu v2.2
+After=network.target
+Wants=network-online.target
 
-info "Systemd yeniden yukleniyor..."
+[Service]
+Type=simple
+User=$USER
+Group=$USER
+WorkingDirectory=$INSTALL_DIR/raspberrypi
+ExecStart=/usr/bin/python3 -m web.app
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=$INSTALL_DIR/raspberrypi
+Environment=LOG_LEVEL=INFO
+Environment=LOG_FILE=$LOG_DIR/app.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vision-line-follower
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Systemd yükle
 sudo systemctl daemon-reload
-
-success "Servis kuruldu"
-echo ""
-
-# ----- ADIM 7: SERVISI ETKINLESTIR -----
-
-header "============================================================"
-header "  ADIM 7: Servis etkinlestiriliyor"
-header "============================================================"
-
-info "Servis etkinlestiriliyor (acilista otomatik baslar)..."
 sudo systemctl enable serit_takip.service
 
-success "Servis etkinlestirildi"
-echo ""
+success "Servis kuruldu ve etkinleştirildi"
 
-# ----- KURULUM TAMAMLANDI -----
+# ============================================================
+#  ADIM 7: DOĞRULAMA
+# ============================================================
 
-header "============================================================"
-header "  KURULUM TAMAMLANDI!"
-header "============================================================"
-echo ""
-success "Vision Line Follower v2.1 kuruldu."
-echo ""
+header "ADIM 7/7: Kurulum Doğrulanıyor"
 
-echo "Servis Komutlari:"
-echo "  Baslat:        sudo systemctl start serit_takip.service"
-echo "  Durdur:        sudo systemctl stop serit_takip.service"
-echo "  Yeniden:       sudo systemctl restart serit_takip.service"
-echo "  Durum:         sudo systemctl status serit_takip.service"
-echo "  Log izle:      sudo journalctl -u serit_takip.service -f"
-echo ""
+ERRORS=0
 
-IP_ADDR=$(hostname -I | awk '{print $1}')
-echo "Web Arayuzu (servis calisirken):"
+# Python modülleri
+info "Python modülleri kontrol ediliyor..."
+python3 -c "import flask" 2>/dev/null || { warning "flask bulunamadı"; ((ERRORS++)); }
+python3 -c "import serial" 2>/dev/null || { warning "pyserial bulunamadı"; ((ERRORS++)); }
+python3 -c "import numpy" 2>/dev/null || { warning "numpy bulunamadı"; ((ERRORS++)); }
+python3 -c "import cv2" 2>/dev/null || { warning "opencv bulunamadı"; ((ERRORS++)); }
+
+if [ $ERRORS -eq 0 ]; then
+    success "Tüm Python modülleri mevcut"
+else
+    warning "$ERRORS modül eksik - bazı özellikler çalışmayabilir"
+fi
+
+# Proje dosyaları
+info "Proje dosyaları kontrol ediliyor..."
+[ -f "$INSTALL_DIR/raspberrypi/web/app.py" ] || { error "app.py bulunamadı!"; }
+[ -f "$INSTALL_DIR/raspberrypi/web/config.py" ] || { error "config.py bulunamadı!"; }
+[ -f "$INSTALL_DIR/raspberrypi/web/serial_manager.py" ] || { error "serial_manager.py bulunamadı!"; }
+[ -f "$INSTALL_DIR/raspberrypi/web/camera_manager.py" ] || { error "camera_manager.py bulunamadı!"; }
+success "Tüm proje dosyaları mevcut"
+
+# ============================================================
+#  SONUÇ
+# ============================================================
+
+header "KURULUM TAMAMLANDI!"
+
+IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -z "$IP_ADDR" ] && IP_ADDR="localhost"
+
+echo ""
+success "Vision Line Follower v2.2 başarıyla kuruldu!"
+echo ""
+echo -e "${CYAN}Servis Komutları:${NC}"
+echo "  Başlat:        sudo systemctl start serit_takip"
+echo "  Durdur:        sudo systemctl stop serit_takip"
+echo "  Yeniden:       sudo systemctl restart serit_takip"
+echo "  Durum:         sudo systemctl status serit_takip"
+echo "  Log izle:      journalctl -u serit_takip -f"
+echo ""
+echo -e "${CYAN}Web Arayüzü:${NC}"
 echo "  http://${IP_ADDR}:5000"
 echo ""
-
-echo "v2.1 Ozellikleri:"
-echo "  - HSV kalibrasyon (web uzerinden)"
-echo "  - Detaylı loglama ve debug"
-echo "  - Arduino sketch yukleme"
-echo "  - PID kontrol ayarlari"
-echo "  - Canli sensor izleme"
-echo "  - Otomatik yeniden baglanti"
+echo -e "${CYAN}v2.2 Özellikler:${NC}"
+echo "  - Akıllı çizgi arama (kaybolunca geri döner)"
+echo "  - Kırmızı algılayınca otomatik durdurma"
+echo "  - HSV kalibrasyon (web üzerinden)"
+echo "  - Arduino sketch yükleme"
+echo "  - Gerçek zamanlı sensör izleme"
 echo ""
 
+# Yeniden başlatma gerekli mi?
 if [ "$NEED_REBOOT" = true ]; then
-    header "============================================================"
-    warning "YENIDEN BASLATMA GEREKLI!"
-    header "============================================================"
     echo ""
-    read -p "Simdi yeniden baslatmak ister misiniz? (e/h): " answer
-    if [ "$answer" = "e" ]; then
-        info "Yeniden baslatiliyor..."
+    warning "UYARI: Seri port yetkisi için yeniden başlatma gerekli!"
+    echo ""
+    read -p "Şimdi yeniden başlatmak ister misiniz? (e/h): " answer
+    if [ "$answer" = "e" ] || [ "$answer" = "E" ]; then
+        info "Yeniden başlatılıyor..."
         sudo reboot
     else
-        warning "Seri port yetkisi icin manuel olarak yeniden baslatin:"
-        echo "  sudo reboot"
+        echo ""
+        warning "Manuel olarak yeniden başlatın: sudo reboot"
+        echo "Ardından servisi başlatın: sudo systemctl start serit_takip"
     fi
 else
-    read -p "Servisi simdi baslatmak ister misiniz? (e/h): " answer
-    if [ "$answer" = "e" ]; then
-        info "Servis baslatiliyor..."
-        sudo systemctl start serit_takip.service
+    echo ""
+    read -p "Servisi şimdi başlatmak ister misiniz? (e/h): " answer
+    if [ "$answer" = "e" ] || [ "$answer" = "E" ]; then
+        info "Servis başlatılıyor..."
+        sudo systemctl start serit_takip
         sleep 3
-        echo ""
-        sudo systemctl status serit_takip.service --no-pager
-        echo ""
-        success "Web arayuzu hazir: http://${IP_ADDR}:5000"
+
+        if systemctl is-active --quiet serit_takip; then
+            echo ""
+            success "Servis çalışıyor!"
+            echo ""
+            echo -e "${GREEN}Web arayüzü hazır: http://${IP_ADDR}:5000${NC}"
+        else
+            echo ""
+            warning "Servis başlatılamadı. Log kontrol edin:"
+            echo "  journalctl -u serit_takip -n 50"
+        fi
     fi
 fi
 
 echo ""
-success "Kurulum tamamlandi!"
+success "Kurulum tamamlandı!"

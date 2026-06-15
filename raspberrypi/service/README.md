@@ -1,111 +1,80 @@
-# Raspberry Pi Servis Kurulumu
+# Servis Kurulumu v2.2
 
-Bu klasör, şerit takip robotunun Raspberry Pi tarafında otomatik olarak başlaması için gerekli dosyaları içerir.
-
-## Servis Ne Yapar?
-
-1. Raspberry Pi açıldığında otomatik olarak başlar
-2. Arduino'nun USB'ye bağlanmasını bekler
-3. Arduino algılandığında görsel işleme programını başlatır
-4. Kamera ile kırmızı renk algılar ve Arduino'ya komut gönderir
-5. Hata durumunda otomatik yeniden başlar
+Bu klasör Raspberry Pi servis kurulumu için gerekli dosyaları içerir.
 
 ## Dosyalar
 
 ```
 service/
-├── README.md                    # Bu dosya (kurulum talimatları)
-├── serit_takip.service          # Systemd servis dosyası
-├── baslatici.py                 # Ana başlatıcı script
-└── kurulum.sh                   # Otomatik kurulum scripti
+├── kurulum.sh          # Tek tuşla kurulum scripti
+└── serit_takip.service # Systemd servis şablonu
 ```
 
-## Hızlı Kurulum
+## Tek Tuşla Kurulum
 
 ```bash
-# 1. Proje dosyalarını Pi'ye kopyalayın
-scp -r p/ pi@<raspberry-pi-ip>:~/
-
-# 2. Pi'ye SSH ile bağlanın
-ssh pi@<raspberry-pi-ip>
-
-# 3. Kurulum scriptini çalıştırın
-cd ~/vision-line-follower/raspberrypi/service
 chmod +x kurulum.sh
 ./kurulum.sh
 ```
 
-## Manuel Kurulum
-
-### Adım 1: Gerekli Paketleri Yükleyin
-
-```bash
-sudo apt update
-sudo apt install -y python3-pip python3-opencv python3-flask python3-picamera2
-pip3 install pyserial numpy
-```
-
-### Adım 2: Seri Port Yetkisi
-
-```bash
-# Kullanıcıyı dialout grubuna ekle
-sudo usermod -a -G dialout $USER
-
-# Yeniden başlat (gerekli)
-sudo reboot
-```
-
-### Adım 3: Proje Dosyalarını Kopyalayın
-
-```bash
-# Proje klasörünü oluştur
-mkdir -p ~/vision-line-follower
-
-# Dosyaları kopyala
-cp ~/vision-line-follower/gorsel_isleme.py ~/vision-line-follower/
-cp ~/vision-line-follower/service/baslatici.py ~/vision-line-follower/
-```
-
-### Adım 4: Servis Dosyasını Kopyalayın
-
-```bash
-# Servis dosyasını systemd klasörüne kopyala
-sudo cp ~/vision-line-follower/service/serit_takip.service /etc/systemd/system/
-
-# Systemd'yi yeniden yükle
-sudo systemctl daemon-reload
-```
-
-### Adım 5: Servisi Etkinleştirin
-
-```bash
-# Servisi etkinleştir (açılışta otomatik başlar)
-sudo systemctl enable serit_takip.service
-
-# Servisi şimdi başlat
-sudo systemctl start serit_takip.service
-```
+Bu script otomatik olarak:
+1. Sistem paketlerini yükler (Flask, OpenCV, pyserial)
+2. Arduino CLI kurar
+3. Seri port yetkilerini ayarlar (dialout grubu)
+4. Kamera yetkilerini ayarlar (video grubu)
+5. Log dizinini oluşturur
+6. Systemd servisini kurar ve etkinleştirir
+7. (Opsiyonel) Servisi başlatır
 
 ## Servis Komutları
 
 ```bash
-# Servis durumunu kontrol et
-sudo systemctl status serit_takip.service
+sudo systemctl start serit_takip    # Başlat
+sudo systemctl stop serit_takip     # Durdur
+sudo systemctl restart serit_takip  # Yeniden başlat
+sudo systemctl status serit_takip   # Durum
+sudo systemctl enable serit_takip   # Açılışta başlat
+sudo systemctl disable serit_takip  # Açılışta başlatma
+```
 
-# Servisi başlat
-sudo systemctl start serit_takip.service
+## Log İzleme
 
-# Servisi durdur
-sudo systemctl stop serit_takip.service
+```bash
+# Canlı log
+journalctl -u serit_takip -f
 
-# Servisi yeniden başlat
-sudo systemctl restart serit_takip.service
+# Son 100 satır
+journalctl -u serit_takip -n 100
 
-# Logları görüntüle
-sudo journalctl -u serit_takip.service -f
+# Bugünkü loglar
+journalctl -u serit_takip --since today
+```
 
-# Son 50 log satırı
-sudo journalctl -u serit_takip.service -n 50
+## Manuel Kurulum
+
+Eğer kurulum scripti çalışmazsa manuel adımlar:
+
+```bash
+# 1. Paketleri yükle
+sudo apt update
+sudo apt install -y python3-flask python3-numpy python3-serial python3-opencv
+
+# 2. Seri port yetkisi
+sudo usermod -a -G dialout $USER
+sudo usermod -a -G video $USER
+
+# 3. Log dizini
+sudo mkdir -p /var/log/vision-line-follower
+sudo chown $USER:$USER /var/log/vision-line-follower
+
+# 4. Servis dosyası (kullanıcı adını değiştirin)
+sudo cp serit_takip.service /etc/systemd/system/
+sudo nano /etc/systemd/system/serit_takip.service
+
+# 5. Servisi etkinleştir
+sudo systemctl daemon-reload
+sudo systemctl enable serit_takip
+sudo systemctl start serit_takip
 ```
 
 ## Sorun Giderme
@@ -113,94 +82,31 @@ sudo journalctl -u serit_takip.service -n 50
 ### Servis başlamıyor
 
 ```bash
-# Detaylı log görüntüle
-sudo journalctl -u serit_takip.service -n 100 --no-pager
+# Detaylı log
+journalctl -u serit_takip -n 50 --no-pager
 
-# Python dosyasını manuel çalıştır
-cd ~/vision-line-follower
-python3 baslatici.py
+# Manuel test
+cd ~/vision-line-follower/raspberrypi
+python3 -m web.app
 ```
 
-### Arduino algılanmıyor
+### Port yetkisi hatası
 
 ```bash
-# Bağlı USB cihazları listele
-ls -la /dev/ttyACM* /dev/ttyUSB*
-
-# Seri port yetkisini kontrol et
-groups $USER  # 'dialout' grubu olmalı
-
-# Yetki yoksa ekle ve yeniden başlat
+groups $USER  # 'dialout' olmalı
 sudo usermod -a -G dialout $USER
 sudo reboot
 ```
 
-### Kamera çalışmıyor
+### Web arayüzüne erişilemiyor
 
 ```bash
-# Kamera durumunu kontrol et
-libcamera-hello --list-cameras
+# Servis çalışıyor mu?
+sudo systemctl status serit_takip
 
-# Kamerayı etkinleştir
-sudo raspi-config
-# Interface Options > Camera > Enable
-sudo reboot
-```
+# Port açık mı?
+sudo netstat -tlnp | grep 5000
 
-### Port kullanımda hatası
-
-```bash
-# Portu kullanan işlemi bul
-sudo lsof /dev/ttyACM0
-
-# İşlemi sonlandır
-sudo kill <PID>
-
-# Veya servisi yeniden başlat
-sudo systemctl restart serit_takip.service
-```
-
-## Web Arayüzü
-
-Servis çalışırken tarayıcıdan canlı görüntüyü izleyebilirsiniz:
-
-```
-http://<raspberry-pi-ip>:5000
-```
-
-Raspberry Pi'nin IP adresini bulmak için:
-```bash
+# IP adresi
 hostname -I
 ```
-
-## Servis Yapılandırması
-
-`/etc/systemd/system/serit_takip.service` dosyasını düzenleyerek ayarları değiştirebilirsiniz:
-
-```ini
-[Service]
-# Çalışma dizini
-WorkingDirectory=/home/pi/vision-line-follower
-
-# Çalıştırılacak komut
-ExecStart=/usr/bin/python3 /home/pi/vision-line-follower/baslatici.py
-
-# Hata durumunda yeniden başlatma gecikmesi (saniye)
-RestartSec=5
-
-# Kullanıcı adı (pi değilse değiştirin)
-User=pi
-```
-
-Değişiklik sonrası:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart serit_takip.service
-```
-
-## İlgili Dosyalar
-
-- [Raspberry Pi README](../README.md) - Pi genel kurulum
-- [Ana README](../../README.md) - Proje genel bakış
-- [Sorun Giderme](../../docs/sorun_giderme.md) - Detaylı hata çözümleri
-- [Test Dosyaları](../../test/README.md) - USB bağlantı testi

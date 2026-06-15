@@ -2,7 +2,7 @@
 
 ## Genel Bakış
 
-Vision Line Follower v2.0, tarayıcı üzerinden robot kontrolü sağlayan bir web arayüzü içerir.
+Vision Line Follower v2.2, tarayıcı üzerinden robot kontrolü sağlayan bir web arayüzü içerir.
 
 ## Özellikler
 

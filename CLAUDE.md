@@ -1,10 +1,16 @@
 # Vision Line Follower
 
-**Versiyon:** 2.1.0 | **Lisans:** MIT
+**Versiyon:** 2.2.0 | **Lisans:** MIT
 
 Dönem bitirme projesi. Arduino ile çizgi takip (PID kontrol), Raspberry Pi ile görsel işleme ve web yönetim arayüzü.
 
-## v2.1 Özellikler
+## v2.2 Yenilikler
+
+- **Akıllı Çizgi Arama**: Çizgi kaybolunca geri dönüş + zigzag arama
+- **Otomatik Kırmızı Durdurma**: Kamera kırmızı görünce robot otomatik durur
+- **Callback Mekanizması**: SSE'ye bağımlı olmayan sürekli algılama
+
+## Tüm Özellikler
 
 - **Web Yönetim Arayüzü**: Tarayıcıdan tam robot kontrolü
 - **PID Kontrol**: Ayarlanabilir Kp, Ki, Kd parametreleri

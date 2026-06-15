@@ -8,7 +8,7 @@ import time
 import threading
 import logging
 import os
-from typing import Optional, Generator, Tuple, Dict, Any, List
+from typing import Optional, Generator, Tuple, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from collections import deque
 from datetime import datetime
@@ -89,6 +89,10 @@ class DetectionResult:
     timestamp: float = field(default_factory=time.time)
 
 
+# Callback tipi
+DetectionCallback = Callable[[DetectionResult], None]
+
+
 @dataclass
 class CameraStats:
     """Kamera istatistikleri"""
@@ -137,8 +141,77 @@ class CameraManager:
         # Log geçmişi
         self._detection_log: deque = deque(maxlen=100)
 
+        # Algılama callback'leri
+        self._detection_callbacks: List[DetectionCallback] = []
+        self._last_callback_triggered: float = 0
+        self._callback_cooldown: float = 1.0  # 1 saniye cooldown
+
+        # Sürekli algılama thread'i
+        self._detection_thread: Optional[threading.Thread] = None
+        self._detection_running = False
+
         self._initialized = True
         logger.info("CameraManager başlatıldı")
+
+    def on_detection(self, callback: DetectionCallback):
+        """Kırmızı algılandığında çağrılacak callback ekle"""
+        self._detection_callbacks.append(callback)
+        logger.info(f"Algılama callback'i eklendi, toplam: {len(self._detection_callbacks)}")
+
+    def start_detection_loop(self):
+        """Sürekli kırmızı algılama döngüsünü başlat (web sayfası açık olmasa da çalışır)"""
+        if self._detection_running:
+            return
+
+        self._detection_running = True
+        self._detection_thread = threading.Thread(target=self._detection_loop, daemon=True)
+        self._detection_thread.start()
+        logger.info("Kırmızı algılama döngüsü başlatıldı")
+
+    def stop_detection_loop(self):
+        """Algılama döngüsünü durdur"""
+        self._detection_running = False
+        if self._detection_thread:
+            self._detection_thread.join(timeout=2)
+            self._detection_thread = None
+        logger.info("Kırmızı algılama döngüsü durduruldu")
+
+    def _detection_loop(self):
+        """Arka planda sürekli kırmızı algılama yap"""
+        logger.info("Algılama thread'i çalışıyor...")
+
+        while self._detection_running:
+            if not self._running:
+                time.sleep(0.5)
+                continue
+
+            if not config.color_detection.enabled:
+                time.sleep(0.5)
+                continue
+
+            try:
+                frame = self.capture_frame()
+                if frame is not None:
+                    _, result = self.detect_color(frame)
+
+            except Exception as e:
+                logger.error(f"Algılama döngüsü hatası: {e}")
+
+            time.sleep(0.1)  # 10 FPS algılama
+
+    def _trigger_detection_callbacks(self, result: DetectionResult):
+        """Tüm callback'leri çağır (cooldown ile)"""
+        current_time = time.time()
+        if current_time - self._last_callback_triggered < self._callback_cooldown:
+            return
+
+        self._last_callback_triggered = current_time
+
+        for callback in self._detection_callbacks:
+            try:
+                callback(result)
+            except Exception as e:
+                logger.error(f"Algılama callback hatası: {e}")
 
     def start(self, camera_index: Optional[int] = None) -> bool:
         """Kamerayı başlat - otomatik olarak mevcut kameraları dener"""
@@ -242,6 +315,7 @@ class CameraManager:
     def stop(self):
         """Kamerayı durdur"""
         self._running = False
+        self.stop_detection_loop()
         self._cleanup_camera()
         self._camera_type = None
         logger.info("Kamera durduruldu")
@@ -402,6 +476,10 @@ class CameraManager:
                 # Log'a ekle
                 self._log_detection(result)
 
+                # Callback'leri tetikle (auto_stop aktifse)
+                if config.color_detection.auto_stop and self._detection_callbacks:
+                    self._trigger_detection_callbacks(result)
+
             self._detection_result = result
 
         except Exception as e:
@@ -528,7 +606,7 @@ class CameraManager:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 1)
 
         # Versiyon
-        cv2.putText(frame, "v2.1", (width - 40, height - 10),
+        cv2.putText(frame, "v2.2", (width - 40, height - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 100), 1)
 
         return frame

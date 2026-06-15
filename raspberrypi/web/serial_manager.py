@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vision Line Follower - Seri Port Yönetimi v2.1
+Vision Line Follower - Seri Port Yönetimi v2.2
 Gelişmiş heartbeat, loglama ve komut geçmişi
 """
 

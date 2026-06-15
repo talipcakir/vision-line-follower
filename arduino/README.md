@@ -1,79 +1,112 @@
-# Arduino Kodları
+# Arduino Firmware v2.1
 
-Bu klasör Arduino Uno için yazılmış kodları içerir.
+Bu klasör Arduino Uno için yazılmış çizgi takip firmware'ini içerir.
 
-## Klasör Yapısı
+## Özellikler
 
-```
-arduino/
-├── README.md                    # Bu dosya
-└── serit_takip_robotu/          # Ana proje
-    └── serit_takip_robotu.ino   # Ana kod
-```
+- **PID Kontrol**: Yumuşak ve hassas çizgi takibi
+- **Akıllı Çizgi Arama**: Çizgi kaybolunca geri dönüp zigzag arama
+- **Web Entegrasyonu**: Pi'den hız/PID ayarları
+- **EEPROM**: Ayarları kalıcı saklama
+- **Heartbeat**: Bağlantı kontrolü
 
-## Ana Kod: serit_takip_robotu
+## Firmware Yükleme
 
-Bu kod robotun ana beynidir. Şu işlevleri yapar:
+### Arduino CLI ile (Önerilen)
 
-1. **IR Sensör Okuma**: 5 kanallı sensör dizisinden çizgi konumunu okur
-2. **Motor Kontrolü**: L298N sürücü ile motorları yönlendirir
-3. **USB Haberleşme**: Raspberry Pi'dan STOP/GO komutlarını alır
-
-### Yükleme
-
-1. Arduino IDE'yi açın
-2. `serit_takip_robotu/serit_takip_robotu.ino` dosyasını açın
-3. **Tools > Board > Arduino Uno** seçin
-4. **Tools > Port** ile doğru COM portunu seçin
-5. **Upload** butonuna tıklayın
-
-### Pin Bağlantıları
-
-| Bileşen | Pinler |
-|---------|--------|
-| Sol Motor | D6 (PWM), D10, D11 |
-| Sağ Motor | D5 (PWM), D8, D9 |
-| IR Sensörler | D2, D3, D4, D7, D12 |
-
-Detaylı şema: [docs/pin_baglantilari.md](../docs/pin_baglantilari.md)
-
-### Hız Ayarı
-
-`serit_takip_robotu.ino` dosyasında `baseSpeed` değerini değiştirin:
-
-```cpp
-int baseSpeed = 90;  // 0-255 arası (varsayılan: 90)
+```bash
+arduino-cli compile --upload --fqbn arduino:avr:uno arduino/serit_takip_robotu_v2
 ```
 
-| Değer | Hız |
-|-------|-----|
-| 60 | Yavaş |
-| 90 | Normal |
-| 120 | Hızlı |
+### Arduino IDE ile
 
-### Seri Komutlar
+1. `serit_takip_robotu_v2/serit_takip_robotu_v2.ino` dosyasını açın
+2. **Tools > Board > Arduino Uno** seçin
+3. **Tools > Port** ile doğru COM portunu seçin
+4. **Upload** butonuna tıklayın
 
-Arduino şu komutları kabul eder:
+### Web Arayüzünden
 
-| Komut | Cevap | Açıklama |
+1. http://<pi-ip>:5000 adresine gidin
+2. Arduino sekmesine tıklayın
+3. Sketch seçin ve "Yükle" butonuna basın
+
+## Pin Bağlantıları
+
+### Motor Pinleri (L298N)
+| Motor | PWM | Yön A | Yön B |
+|-------|-----|-------|-------|
+| Sol | D6 | D10 | D11 |
+| Sağ | D5 | D8 | D9 |
+
+### IR Sensör Pinleri
+| Sensör | Pin | Konum |
+|--------|-----|-------|
+| S1 | D2 | En sol |
+| S2 | D3 | Sol |
+| S3 | D4 | Orta |
+| S4 | D7 | Sağ |
+| S5 | D12 | En sağ |
+
+## Seri Komutlar
+
+| Komut | Yanıt | Açıklama |
 |-------|-------|----------|
 | `PING` | `PONG` | Bağlantı testi |
-| `STOP` | `OK_STOPPED` | Motorları durdur |
-| `GO` | `OK_RUNNING` | Çizgi takibe devam |
-| `STATUS` | `STATUS_STOPPED` veya `STATUS_RUNNING` | Durum sorgula |
+| `STOP` | `OK_STOPPED` | Robotu durdur |
+| `GO` | `OK_RUNNING` | Robota devam et |
+| `STATUS` | `STATUS_*` | Durum sorgula |
+| `VERSION` | `VERSION:2.1.0` | Firmware versiyonu |
+| `SPEED:<0-255>` | `OK_SPEED:<n>` | Hız ayarla |
+| `PID:<Kp>,<Ki>,<Kd>` | `OK_PID:...` | PID parametreleri |
+| `SENSORS` | `SENSORS:s1,s2,s3,s4,s5` | Sensör değerleri |
+| `CONFIG` | `CONFIG:speed,Kp,Ki,Kd` | Mevcut ayarlar |
+| `SAVE` | `OK_SAVED` | EEPROM'a kaydet |
+| `LOAD` | `OK_LOADED` | EEPROM'dan yükle |
+| `RESET` | `OK_RESET` | Varsayılana dön |
 
-### Debug
+## PID Ayarları
 
-Serial Monitor'ü açarak (9600 baud) robot durumunu izleyebilirsiniz.
+| Parametre | Varsayılan | Aralık | Açıklama |
+|-----------|------------|--------|----------|
+| **Kp** | 1.0 | 0-10 | Anlık hata tepkisi |
+| **Ki** | 0.0 | 0-5 | Birikmiş hata düzeltme |
+| **Kd** | 0.5 | 0-10 | Hata değişim hızı |
+| **baseSpeed** | 100 | 0-255 | Temel motor hızı |
 
-## Test Kodları
+### Ayar İpuçları
 
-Test ve kalibrasyon kodları için: [test/README.md](../test/README.md)
+- **Robot sallanıyorsa**: Kd artırın
+- **Keskin dönüş yapamıyorsa**: Kp artırın
+- **Çizgiyi kaybediyorsa**: Hızı azaltın
 
-## İlgili Dosyalar
+## Çizgi Arama Algoritması
 
-- [Ana README](../README.md) - Proje genel bakış
-- [Pin Bağlantıları](../docs/pin_baglantilari.md) - Donanım şemaları
-- [Sorun Giderme](../docs/sorun_giderme.md) - Hata çözümleri
-- [Raspberry Pi](../raspberrypi/README.md) - Pi tarafı kurulum
-- [Test Dosyaları](../test/README.md) - Test ve kalibrasyon
+Robot çizgiyi kaybettiğinde:
+
+1. **İlk 500ms**: Son bilinen yöne dönmeye devam eder
+2. **500ms sonra**: Geri gider (300ms)
+3. **Sonra**: Zigzag arama yapar (her fazda daha geniş açı)
+4. **6 faz sonra**: Tekrar geri gidip ters yöne arar
+
+## Test
+
+Serial Monitor'ü açarak (9600 baud) robot durumunu izleyebilirsiniz:
+
+```
+Sensörler: 00100 -> ILERI
+Sensörler: 01100 -> SOL
+Sensörler: 00000 -> ARAMA
+```
+
+## Sorun Giderme
+
+### Motorlar ters dönüyor
+Motor kablolarını L298N üzerinde ters çevirin veya IN1/IN2 değerlerini değiştirin.
+
+### Sensör ters çalışıyor
+Bazı sensörler siyahta 0 yerine 1 verir. Kodda sensör okuma mantığını kontrol edin.
+
+### Çizgiyi bulamıyor
+- IR sensör yüksekliğini kontrol edin (yerden 1-2 cm)
+- Çizgi kontrastını artırın (mat siyah, parlak beyaz)

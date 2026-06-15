@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Vision Line Follower - Web Yönetim Arayüzü v2.1
+Vision Line Follower - Web Yönetim Arayüzü v2.2
 Gelişmiş kontrol, HSV kalibrasyonu ve detaylı loglama
 """
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 import os
 import sys
@@ -180,6 +180,24 @@ def on_connection_change(state: ConnectionState):
 
 
 serial_manager.on_state_change(on_connection_change)
+
+
+# ============================================================
+#  KIRMIZI ALGILAMA CALLBACK
+# ============================================================
+
+def on_red_detected(detection):
+    """Kırmızı algılandığında robotu durdur"""
+    if serial_manager.is_connected and app_state.robot_running:
+        logger.warning(f"KIRMIZI ALGILANDI! Alan: {detection.area}px, Güven: {detection.confidence*100:.0f}%")
+        result = serial_manager.send_command("STOP")
+        if result.success:
+            app_state.robot_running = False
+            app_state.update_command("AUTO_STOP")
+            logger.info("Robot otomatik olarak durduruldu")
+
+
+camera_manager.on_detection(on_red_detected)
 
 
 # ============================================================
@@ -779,12 +797,9 @@ def api_events():
                     last_detection = detection
                     yield f"event: detection\ndata: {json.dumps({'red_detected': detection.red_detected, 'area': detection.area, 'confidence': detection.confidence})}\n\n"
 
-                    # Otomatik durdurma
+                    # Otomatik durdurma bildirimi (STOP komutu callback üzerinden gönderiliyor)
                     if detection.red_detected and config.color_detection.auto_stop:
-                        if serial_manager.is_connected:
-                            serial_manager.send_command("STOP")
-                            app_state.robot_running = False
-                            yield f"event: auto_stop\ndata: {json.dumps({'reason': 'red_detected'})}\n\n"
+                        yield f"event: auto_stop\ndata: {json.dumps({'reason': 'red_detected', 'robot_running': app_state.robot_running})}\n\n"
 
                 time.sleep(0.1)
 
@@ -851,8 +866,12 @@ def main():
     logger.info("=" * 60)
 
     # Kamera başlat
-    if not camera_manager.start():
-        logger.warning("Kamera başlatılamadı, simülasyon modunda")
+    if camera_manager.start():
+        # Kırmızı algılama döngüsünü başlat (web sayfası açık olmasa da çalışır)
+        camera_manager.start_detection_loop()
+        logger.info("Kamera ve algılama döngüsü başlatıldı")
+    else:
+        logger.warning("Kamera başlatılamadı")
 
     # Arduino bağlantısı
     if serial_manager.connect():

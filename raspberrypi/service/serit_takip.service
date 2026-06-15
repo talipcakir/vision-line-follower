@@ -1,32 +1,33 @@
 # ============================================================
-#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi (v2.1)
+#  SERIT TAKIP ROBOTU - Systemd Servis Dosyasi (v2.2)
 # ============================================================
 #
-#  Bu dosya Raspberry Pi acildiginda web yonetim arayuzunun
-#  otomatik olarak baslamasini saglar.
+#  NOT: Bu dosya kurulum.sh tarafindan otomatik olusturulur.
+#  Manuel kurulum icin asagidaki adimlari izleyin.
 #
-#  KURULUM:
-#  sudo cp serit_takip.service /etc/systemd/system/
-#  sudo systemctl daemon-reload
-#  sudo systemctl enable serit_takip.service
-#  sudo systemctl start serit_takip.service
+#  MANUEL KURULUM:
+#  1. Bu dosyayi kopyalayin ve kullanici/dizin bilgilerini duzenleyin
+#  2. sudo cp serit_takip.service /etc/systemd/system/
+#  3. sudo systemctl daemon-reload
+#  4. sudo systemctl enable serit_takip.service
+#  5. sudo systemctl start serit_takip.service
 #
 # ============================================================
 
 [Unit]
-Description=Vision Line Follower - Web Yonetim Arayuzu v2.1
+Description=Vision Line Follower - Web Yonetim Arayuzu v2.2
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=__USER__
-Group=__USER__
 
-# Calisma dizini
-WorkingDirectory=__HOME__/vision-line-follower/raspberrypi
+# DIKKAT: Asagidaki degerleri kendi sisteminize gore degistirin
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/vision-line-follower/raspberrypi
 
-# Calistirilacak komut
+# Ana uygulama
 ExecStart=/usr/bin/python3 -m web.app
 
 # Hata durumunda yeniden baslat
@@ -35,7 +36,7 @@ RestartSec=5
 
 # Ortam degiskenleri
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=__HOME__/vision-line-follower/raspberrypi
+Environment=PYTHONPATH=/home/pi/vision-line-follower/raspberrypi
 Environment=LOG_LEVEL=INFO
 Environment=LOG_FILE=/var/log/vision-line-follower/app.log
 

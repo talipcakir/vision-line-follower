@@ -1,9 +1,15 @@
 # Vision Line Follower
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)]()
 
 Dönem bitirme projesi. Arduino ile çizgi takip (PID kontrol), Raspberry Pi ile görsel işleme ve tam özellikli web yönetim arayüzü.
+
+## v2.2 Yenilikler
+
+- **Akıllı Çizgi Arama**: Çizgi kaybolunca geri dönüp zigzag arama yapar
+- **Otomatik Kırmızı Durdurma**: Kamera kırmızı görünce robot otomatik durur
+- **Tek Tuşla Kurulum**: Tek script ile tüm kurulum ve başlatma
 
 ## Özellikler
 
@@ -17,6 +23,44 @@ Dönem bitirme projesi. Arduino ile çizgi takip (PID kontrol), Raspberry Pi ile
 - Gerçek zamanlı log izleme
 - Otomatik başlatma servisi
 
+## Hızlı Başlangıç
+
+### 1. Arduino'ya Firmware Yükle
+
+```bash
+# Arduino CLI ile
+arduino-cli compile --upload --fqbn arduino:avr:uno arduino/serit_takip_robotu_v2
+
+# veya Arduino IDE ile
+# Dosya: arduino/serit_takip_robotu_v2/serit_takip_robotu_v2.ino
+```
+
+### 2. Raspberry Pi Kurulum (Tek Komut)
+
+```bash
+# Projeyi Pi'ye kopyalayın
+scp -r . pi@<raspberry-pi-ip>:~/vision-line-follower
+
+# Pi'de kurulum
+ssh pi@<raspberry-pi-ip>
+cd ~/vision-line-follower/raspberrypi/service
+chmod +x kurulum.sh
+./kurulum.sh
+```
+
+Kurulum scripti otomatik olarak:
+- Tüm bağımlılıkları yükler
+- Arduino CLI kurar
+- Seri port yetkilerini ayarlar
+- Systemd servisini kurar
+- Projeyi başlatır
+
+### 3. Web Arayüzüne Eriş
+
+```
+http://<raspberry-pi-ip>:5000
+```
+
 ## Web Arayüzü Önizleme
 
 ```
@@ -27,8 +71,8 @@ Dönem bitirme projesi. Arduino ile çizgi takip (PID kontrol), Raspberry Pi ile
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────────────────────┐  │
 │  │                 │  │  Robot Kontrolü                 │  │
-│  │   📷 Canlı      │  │  [▶ BAŞLAT]  [⏹ DURDUR]        │  │
-│  │    Video        │  │  Durum: Çalışıyor               │  │
+│  │   Canlı        │  │  [▶ BAŞLAT]  [⏹ DURDUR]        │  │
+│  │    Video       │  │  Durum: Çalışıyor               │  │
 │  │                 │  ├─────────────────────────────────┤  │
 │  └─────────────────┘  │  Hız: [======●====] 150         │  │
 │                       ├─────────────────────────────────┤  │
@@ -37,42 +81,12 @@ Dönem bitirme projesi. Arduino ile çizgi takip (PID kontrol), Raspberry Pi ile
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Hızlı Başlangıç
-
-### 1. Arduino'ya Firmware Yükle
-
-```bash
-# Arduino CLI ile
-arduino-cli compile --upload --fqbn arduino:avr:uno arduino/serit_takip_robotu_v2
-
-# veya Arduino IDE ile: arduino/serit_takip_robotu_v2/serit_takip_robotu_v2.ino
-```
-
-### 2. Raspberry Pi Kurulum
-
-```bash
-# Dosyaları Pi'ye kopyalayın
-scp -r . pi@<raspberry-pi-ip>:~/vision-line-follower
-
-# Pi'de kurulum scriptini çalıştırın
-ssh pi@<raspberry-pi-ip>
-cd ~/vision-line-follower/raspberrypi/service
-chmod +x kurulum.sh
-./kurulum.sh
-```
-
-### 3. Web Arayüzüne Eriş
-
-```
-http://<raspberry-pi-ip>:5000
-```
-
 ## Proje Yapısı
 
 ```
 vision-line-follower/
 ├── arduino/
-│   └── serit_takip_robotu_v2/       # PID kontrollü firmware
+│   └── serit_takip_robotu_v2/       # PID + akıllı çizgi arama
 ├── raspberrypi/
 │   ├── web/                         # Web arayüzü
 │   │   ├── app.py                   # Flask API
@@ -81,7 +95,10 @@ vision-line-follower/
 │   │   ├── camera_manager.py        # Kamera ve algılama
 │   │   ├── arduino_manager.py       # Sketch yönetimi
 │   │   └── static/                  # Frontend
-│   └── service/                     # Systemd servisi
+│   ├── service/                     # Systemd servisi
+│   │   ├── kurulum.sh               # Tek tuşla kurulum
+│   │   └── serit_takip.service
+│   └── requirements.txt
 ├── test/                            # Test dosyaları
 └── docs/                            # Dokümantasyon
 ```
@@ -117,41 +134,14 @@ vision-line-follower/
 | S4 | D7 | Sağ |
 | S5 | D12 | En sağ |
 
-## Web Arayüzü Özellikleri
-
-### Kontrol Sekmesi
-- Robot başlat/durdur
-- Hız ayarı (0-255)
-- PID parametreleri
-- Canlı sensör izleme
-- Kamera görüntüsü
-
-### HSV Kalibrasyon
-- Renk algılama aç/kapat
-- Kırmızı renk aralıkları ayarı
-- Minimum algılama alanı
-- Anlık önizleme
-
-### Arduino Yönetimi
-- Port listesi ve bağlantı
-- Sketch derleme ve yükleme
-- Komut terminali
-- Firmware bilgisi
-
-### Log & Debug
-- Gerçek zamanlı sistem logları
-- Komut geçmişi
-- Algılama geçmişi
-- Sistem istatistikleri
-
 ## Servis Komutları
 
 ```bash
-sudo systemctl start serit_takip.service    # Başlat
-sudo systemctl stop serit_takip.service     # Durdur
-sudo systemctl restart serit_takip.service  # Yeniden başlat
-sudo systemctl status serit_takip.service   # Durum
-sudo journalctl -u serit_takip.service -f   # Log izle
+sudo systemctl start serit_takip    # Başlat
+sudo systemctl stop serit_takip     # Durdur
+sudo systemctl restart serit_takip  # Yeniden başlat
+sudo systemctl status serit_takip   # Durum
+journalctl -u serit_takip -f        # Log izle
 ```
 
 ## Geliştirme
@@ -165,10 +155,6 @@ python3 -m web.app
 /var/log/vision-line-follower/app.log
 ```
 
-## API Referansı
-
-Detaylı API dokümantasyonu için: [CLAUDE.md](CLAUDE.md)
-
 ## Dokümantasyon
 
 | Dosya | İçerik |
@@ -178,14 +164,41 @@ Detaylı API dokümantasyonu için: [CLAUDE.md](CLAUDE.md)
 | [docs/sorun_giderme.md](docs/sorun_giderme.md) | Sorun çözümleri |
 | [docs/web_arayuzu.md](docs/web_arayuzu.md) | Web arayüzü kullanımı |
 
+## Sorun Giderme
+
+### Arduino algılanmıyor
+```bash
+# Port kontrolü
+ls -la /dev/ttyACM* /dev/ttyUSB*
+
+# Yetki ekleme (gerekirse)
+sudo usermod -a -G dialout $USER
+sudo reboot
+```
+
+### Kamera çalışmıyor
+```bash
+# Kamera kontrolü
+libcamera-hello --list-cameras
+
+# Kamerayı etkinleştir
+sudo raspi-config
+# Interface Options > Camera > Enable
+```
+
+### Web arayüzüne erişilemiyor
+```bash
+# Servis durumu
+sudo systemctl status serit_takip
+
+# Port kontrolü
+sudo netstat -tlnp | grep 5000
+```
+
 ## Lisans
 
 Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır.
 
 ## Yazar
 
-**Talip Çakır**
-
----
-
-Bu proje eğitim amaçlı dönem bitirme projesi olarak geliştirilmiştir.
+**Talip Çakır** - Dönem Bitirme Projesi
